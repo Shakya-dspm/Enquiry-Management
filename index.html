@@ -1,13 +1,172 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Enquiry Management Application</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+        rel="stylesheet">
     <link rel="stylesheet" href="assets/css/style.css">
 </head>
+
 <body>
-    
+    <header class="sidebar">
+        <div class="brand"><span class="logo"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+                    <rect x="3" y="5" width="18" height="14" rx="3" />
+                    <path d="M3 8l9 6 9-6" />
+                </svg></span>
+            <div>
+                <h1>Enquiry Desk</h1>
+                <p>Customer enquiry management</p>
+            </div>
+        </div>
+        <nav role="tablist" aria-label="Sections">
+            <button role="tab" data-tab="dash" aria-selected="true"><svg class="ic" viewBox="0 0 24 24"
+                    aria-hidden="true">
+                    <rect x="3" y="3" width="7" height="9" rx="1.5" />
+                    <rect x="14" y="3" width="7" height="5" rx="1.5" />
+                    <rect x="14" y="12" width="7" height="9" rx="1.5" />
+                    <rect x="3" y="16" width="7" height="5" rx="1.5" />
+                </svg><span>Dashboard</span></button>
+            <button role="tab" data-tab="enq" aria-selected="false"><svg class="ic" viewBox="0 0 24 24"
+                    aria-hidden="true">
+                    <path d="M21 15a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z" />
+                </svg><span>Enquiries</span></button>
+            <button role="tab" data-tab="cat" aria-selected="false"><svg class="ic" viewBox="0 0 24 24"
+                    aria-hidden="true">
+                    <path d="M3 12V4h8l10 10-8 8z" />
+                    <circle cx="7.5" cy="8.5" r="1.2" />
+                </svg><span>Categories</span></button>
+            <button role="tab" data-tab="sta" aria-selected="false"><svg class="ic" viewBox="0 0 24 24"
+                    aria-hidden="true">
+                    <circle cx="5" cy="6" r="2" />
+                    <circle cx="12" cy="12" r="2" />
+                    <circle cx="19" cy="18" r="2" />
+                    <path d="M6.5 7.5l4 3M13.5 13.5l4 3" />
+                </svg><span>Statuses</span></button>
+        </nav>
+        <div class="side-actions"><button class="pri" id="newBtn">+ New enquiry</button><button id="rst">Reset demo
+                data</button></div>
+    </header>
+    <main>
+        <div>
+            <div class="topbar">
+                <div>
+                    <h2 class="greet">Welcome back, Support Team</h2>
+                    <p class="sub" id="today"></p>
+                </div><label class="search"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+                        <circle cx="11" cy="11" r="7" />
+                        <path d="M20 20l-4-4" />
+                    </svg><input id="gs" type="search" placeholder="Search enquiries"
+                        aria-label="Search enquiries"></label><button class="icon-btn" aria-label="Notifications"><svg
+                        class="ic" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8" />
+                        <path d="M10 20a2 2 0 0 0 4 0" />
+                    </svg><span class="badge"></span></button><span class="av" aria-hidden="true">ST</span>
+            </div>
+            <div class="view dash" id="v-dash">
+                <div class="cards" id="cards"></div>
+                <div class="grid2">
+                    <div class="card">
+                        <div class="ch">
+                            <h3>Weekly enquiry volume</h3><span class="mute">Last 7 days</span>
+                        </div>
+                        <div id="week"></div>
+                    </div>
+                    <div class="card">
+                        <div class="ch">
+                            <h3>Top agents</h3>
+                        </div>
+                        <div id="agents"></div>
+                        <div class="ch">
+                            <h3>Recent activity</h3><button class="pill" data-go="enq">View all</button>
+                        </div>
+                        <div id="recent"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="view" id="v-enq" hidden>
+                <div class="stats" id="stats" aria-live="polite"></div>
+                <div class="split">
+                    <section aria-label="Enquiries">
+                        <div class="tools">
+                            <input id="q" class="w" type="search" placeholder="Search name or subject"
+                                aria-label="Search enquiries">
+                            <select id="fs" aria-label="Filter by status"></select>
+                            <select id="fc" aria-label="Filter by category"></select>
+                            <select id="fp" aria-label="Filter by priority">
+                                <option value="">All priorities</option>
+                                <option>high</option>
+                                <option>normal</option>
+                                <option>low</option>
+                            </select>
+                            <select id="sf" aria-label="Sort">
+                                <option value="newest">Newest first</option>
+                                <option value="oldest">Oldest first</option>
+                                <option value="priority">Priority</option>
+                                <option value="due">SLA due soonest</option>
+                            </select>
+                        </div>
+                        <ul id="list" role="listbox"></ul>
+                    </section>
+                    <section id="detail" aria-label="Enquiry detail"></section>
+                </div>
+            </div>
+            <div class="view pane" id="v-cat" hidden>
+                <div class="top">
+                    <h2>Categories</h2><button class="pri" data-new="category">Add category</button>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Description</th>
+                            <th>Enquiries</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="catBody"></tbody>
+                </table>
+            </div>
+            <div class="view pane" id="v-sta" hidden>
+                <div class="top">
+                    <h2>Statuses</h2><button class="pri" data-new="status">Add status</button>
+                </div>
+                <p class="meta">Enquiries move one step at a time, in the order below. Statuses that stop the SLA clock
+                    mark work as done.</p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Order</th>
+                            <th>Name</th>
+                            <th>Stops SLA clock</th>
+                            <th>Enquiries</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="staBody"></tbody>
+                </table>
+            </div>
+        </div>
+        <section class="console" aria-label="Request log" hidden>
+            <h3>Log <span><button id="clr">Clear</button></span></h3>
+            <div id="log"></div>
+        </section>
+    </main>
+    <dialog id="dlg">
+        <form id="frm" onsubmit="return false">
+            <h2 id="dt" style="margin:0;font-size:18px"></h2>
+            <div id="dfields"></div>
+            <p id="derr" class="late" role="alert"></p>
+            <div class="acts"><button type="button" id="cancel">Cancel</button><button class="pri"
+                    id="save">Save</button></div>
+        </form>
+    </dialog>
+    <div id="toast" role="status"></div>
+
     <script src="app.js"></script>
 </body>
+
 </html>
