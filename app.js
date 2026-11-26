@@ -1,408 +1,56 @@
-const KEY = "enq-demo-v3",
-  HR = 36e5,
-  SLA = { high: 4, normal: 24, low: 72 };
-const seed = {
-  categories: [
-    { id: "cat_1", name: "Sales", description: "Quotes and pricing" },
-    { id: "cat_2", name: "Billing", description: "Invoices and payments" },
-    { id: "cat_3", name: "Support", description: "Help with a product" },
-    { id: "cat_4", name: "Partnership", description: "Business partnerships" },
-  ],
-  statuses: [
-    { id: "st_1", name: "New", order: 1, color: "#2f4bdb", isFinal: false },
-    {
-      id: "st_2",
-      name: "In progress",
-      order: 2,
-      color: "#d98a00",
-      isFinal: false,
-    },
-    { id: "st_3", name: "Resolved", order: 3, color: "#17855a", isFinal: true },
-    { id: "st_4", name: "Closed", order: 4, color: "#6b7688", isFinal: true },
-  ],
-  enquiries: [
-    ...[
-      [
-        "Kasun Silva",
-        "Delivery delay on order 7731",
-        "cat_3",
-        "st_4",
-        "normal",
-        "Ayesha",
-        150,
-      ],
-      [
-        "Elena Rossi",
-        "Request for product catalogue",
-        "cat_1",
-        "st_3",
-        "low",
-        "Daniel",
-        110,
-      ],
-      [
-        "Tom Hardy",
-        "Wrong item received",
-        "cat_3",
-        "st_3",
-        "high",
-        "Kasun",
-        90,
-      ],
-      [
-        "Aisha Khan",
-        "Refund not received",
-        "cat_2",
-        "st_4",
-        "normal",
-        "Ayesha",
-        125,
-      ],
-      [
-        "Ravi Kumar",
-        "Sponsorship proposal",
-        "cat_4",
-        "st_1",
-        "normal",
-        null,
-        12,
-      ],
-    ].map(([n, s, c, st, p, a, h], i) => ({
-      id: "enq_110" + i,
-      name: n,
-      email: n.split(" ")[0].toLowerCase() + "@example.com",
-      subject: s,
-      message:
-        "Hello, " + s.toLowerCase() + ". Could someone please look into this?",
-      categoryId: c,
-      statusId: st,
-      priority: p,
-      assignee: a,
-      notes: [],
-      replies: [],
-      history: [],
-      created: Date.now() - HR * h,
-    })),
-    {
-      id: "enq_1001",
-      name: "Priya Fernando",
-      email: "priya@lankatea.example",
-      subject: "Bulk pricing for 500 units",
-      message:
-        "We’d like a quote for 500 units delivered to Colombo, with net-30 terms.",
-      categoryId: "cat_1",
-      statusId: "st_1",
-      priority: "high",
-      assignee: null,
-      notes: [],
-      replies: [],
-      history: [],
-      created: Date.now() - HR * 5,
-    },
-    {
-      id: "enq_1002",
-      name: "Marcus Webb",
-      email: "marcus@brightwell.example",
-      subject: "Invoice shows the wrong address",
-      message: "Invoice #4821 lists our old office. Can you reissue it?",
-      categoryId: "cat_2",
-      statusId: "st_2",
-      priority: "normal",
-      assignee: "Ayesha",
-      notes: [
-        {
-          text: "Billing profile address is outdated.",
-          at: Date.now() - HR * 20,
-        },
-      ],
-      replies: [],
-      history: [{ from: "New", to: "In progress", at: Date.now() - HR * 22 }],
-      created: Date.now() - HR * 30,
-    },
-    {
-      id: "enq_1003",
-      name: "Nimali Perera",
-      email: "nimali@harbor.example",
-      subject: "Partnership opportunity",
-      message:
-        "We run a logistics network across South Asia and would like to discuss a referral programme.",
-      categoryId: "cat_4",
-      statusId: "st_3",
-      priority: "low",
-      assignee: "Daniel",
-      notes: [],
-      replies: [],
-      history: [],
-      created: Date.now() - HR * 70,
-    },
-  ],
-};
-let db;
-try {
-  db = JSON.parse(localStorage.getItem(KEY) || "null");
-} catch (e) {
-  db = null;
-}
-if (!db || !db.enquiries) db = JSON.parse(JSON.stringify(seed));
-const persist = () => {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(db));
-  } catch (e) {}
-};
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const E = (s, o) => {
-  throw { s, o };
-};
-const uid = (p) => p + "_" + Math.random().toString(36).slice(2, 7);
-const find = (a, id) =>
-  a.find((x) => x.id === id) || E(404, { error: "not_found", id });
-const must = (b, ks) => {
-  const m = ks.filter((k) => String(b[k] ?? "").trim() === "");
-  if (m.length) E(422, { error: "validation_failed", fields: m });
-};
-const sorted = () => [...db.statuses].sort((a, b) => a.order - b.order);
+﻿// Local development uses the same-origin proxy in local-server.cjs. Static deployments
+// use the provider URL directly; the provider currently omits ACAO on actual responses.
+const API_BASE = typeof location !== "undefined" && /^(localhost|127\.0\.0\.1)$/.test(location.hostname)
+  ? "/api/Enquiry"
+  : "https://api.freeprojectapi.com/api/Enquiry";
+const HR = 36e5, SLA = { high: 4, normal: 24, low: 72 };
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const ago = (t) => { const h=Math.round((Date.now()-t)/HR); return h<1?"just now":h<24?h+" h ago":Math.round(h/24)+" d ago"; };
+const dur = (ms) => { const h=Math.max(1,Math.round(ms/HR)); return h<24?h+" h":Math.round(h/24)+" d"; };
 const due = (e) => e.created + (SLA[e.priority] || 24) * HR;
-const SORTS = {
-  newest: (a, b) => b.created - a.created,
-  oldest: (a, b) => a.created - b.created,
-  priority: (a, b) =>
-    SLA[a.priority] - SLA[b.priority] || a.created - b.created,
-  due: (a, b) => due(a) - due(b),
-};
-const isOpen = (e) => !find(db.statuses, e.statusId).isFinal;
-const sum = (e) => ({
-  id: e.id,
-  name: e.name,
-  email: e.email,
-  assignee: e.assignee,
-  subject: e.subject,
-  categoryId: e.categoryId,
-  statusId: e.statusId,
-  priority: e.priority,
-  created: e.created,
-  due: due(e),
-  overdue: isOpen(e) && Date.now() > due(e),
-});
-const used = (k, id) => db.enquiries.filter((e) => e[k] === id).length;
-const withCount = (arr, k) =>
-  arr.map((x) => ({ ...x, enquiries: used(k, x.id) }));
-const catCheck = (id) => {
-  if (!db.categories.some((c) => c.id === id))
-    E(422, { error: "invalid_category", id });
-};
-const nameDup = (arr, n, self) => {
-  if (
-    arr.some(
-      (x) =>
-        x.id !== self && x.name.trim().toLowerCase() === n.trim().toLowerCase(),
-    )
-  )
-    E(409, { error: "duplicate_name", name: n });
-};
-
-const RT = {
-  "GET get-enquiries": () => ({
-    data: db.enquiries.map(sum),
-    total: db.enquiries.length,
-  }),
-  "GET filter-enquiries": (id, b, p) => {
-    const s = p.get("statusId"),
-      c = p.get("categoryId"),
-      pr = p.get("priority"),
-      q = (p.get("q") || "").toLowerCase();
-    const d = db.enquiries
-      .filter(
-        (e) =>
-          (!s || e.statusId === s) &&
-          (!c || e.categoryId === c) &&
-          (!pr || e.priority === pr) &&
-          (!q || (e.name + e.subject).toLowerCase().includes(q)),
-      )
-      .sort(SORTS[p.get("sort")] || SORTS.newest)
-      .map(sum);
-    return { data: d, total: d.length };
-  },
-  "GET get-enquiry": (id) => find(db.enquiries, id),
-  "POST create-enquiry": (id, b) => {
-    must(b, ["name", "email", "subject", "message", "categoryId"]);
-    catCheck(b.categoryId);
-    const e = {
-      id: uid("enq"),
-      name: b.name,
-      email: b.email,
-      subject: b.subject,
-      message: b.message,
-      categoryId: b.categoryId,
-      statusId: sorted()[0].id,
-      priority: b.priority || "normal",
-      assignee: null,
-      notes: [],
-      replies: [],
-      history: [],
-      created: Date.now(),
-    };
-    db.enquiries.push(e);
-    return [201, e];
-  },
-  "PUT update-enquiry": (id, b) => {
-    const e = find(db.enquiries, id),
-      s = sorted();
-    if (b.categoryId) catCheck(b.categoryId);
-    ["note", "reply"].forEach((k) => {
-      if (k in b && !String(b[k]).trim())
-        E(422, { error: "validation_failed", fields: [k] });
-    });
-    const move = (to) => {
-      const i = s.findIndex((x) => x.id === e.statusId),
-        j = s.findIndex((x) => x.id === to);
-      if (j < 0) E(422, { error: "invalid_status", id: to });
-      if (Math.abs(i - j) !== 1)
-        E(409, {
-          error: "invalid_transition",
-          from: s[i].name,
-          to: s[j].name,
-          allowed: [s[i - 1], s[i + 1]].filter(Boolean).map((x) => x.name),
-        });
-      e.history.push({ from: s[i].name, to: s[j].name, at: Date.now() });
-      e.statusId = to;
-    };
-    if (b.statusId && b.statusId !== e.statusId) move(b.statusId);
-    [
-      "name",
-      "email",
-      "subject",
-      "message",
-      "priority",
-      "assignee",
-      "categoryId",
-    ].forEach((k) => {
-      if (k in b) e[k] = b[k];
-    });
-    if (b.note) e.notes.push({ text: b.note, at: Date.now() });
-    if (b.reply) {
-      e.replies.push({ text: b.reply, at: Date.now() });
-      if (e.statusId === s[0].id && s[1]) move(s[1].id);
+function mapEnquiry(x) {
+  const created=Date.parse(x.enquiryDate || x.created || "") || Date.now();
+  const message=x.message ?? "";
+  const e={id:String(x.enquiryId ?? x.id),name:x.customerName ?? x.name ?? "Unknown customer",email:x.customerEmail ?? x.email ?? "",subject:x.subject ?? (message.length>72?message.slice(0,69)+"...":message || "Enquiry"),message,categoryId:String(x.categoryId ?? ""),statusId:String(x.statusId ?? ""),priority:x.priority ?? "normal",converted:!!x.isConverted,assignee:x.assignee ?? null,notes:[],replies:x.feedback?[{text:x.feedback,at:created}]:[],history:[],created};
+  e.due=due(e); e.overdue=!stat(e.statusId).isFinal && Date.now()>e.due; return e;
+}
+async function api(method,path,body,quiet) {
+  const route=path.split("?")[0], parts=route.split("/"), action=parts[0], id=parts[1];
+  const endpoints={"get-enquiries":"get-enquiries","get-categories":"get-categories","get-statuses":"get-statuses","get-enquiry":"get-enquiry/"+id,"create-enquiry":"create-enquiry","update-enquiry":"update-enquiry/"+id,"delete-enquiry":"delete-enquiry/"+id,"create-category":"create-category","update-category":"update-category/"+id,"delete-category":"delete-category/"+id,"create-status":"create-status","update-status":"update-status/"+id,"delete-status":"delete-status/"+id};
+  const endpoint=endpoints[action] || (action==="filter-enquiries"?"get-enquiries":null);
+  if(!endpoint) throw new Error("Unsupported API operation");
+  let payload=body;
+  if(body && action.includes("enquiry")) {
+    payload={};
+    if(action==="create-enquiry") Object.assign(payload,{customerName:body.name,customerEmail:body.email,customerPhone:body.phone || "",message:[body.subject,body.message].filter(Boolean).join("\n\n"),categoryId:Number(body.categoryId),statusId:Number(sts.find(s=>/new/i.test(s.name))?.id || 0),enquiryType:"",enquiryDate:new Date().toISOString(),followUpDate:new Date().toISOString()});
+    else {
+      if("name" in body) payload.customerName=body.name;
+      if("email" in body) payload.customerEmail=body.email;
+      if("message" in body) payload.message=body.message;
+      if("categoryId" in body) payload.categoryId=Number(body.categoryId);
+      if("statusId" in body) payload.statusId=Number(body.statusId);
+      if("reply" in body || "note" in body) payload.feedback=body.reply ?? body.note;
     }
-    return e;
-  },
-  "DELETE delete-enquiry": (id) => {
-    find(db.enquiries, id);
-    db.enquiries = db.enquiries.filter((e) => e.id !== id);
-    return [204, null];
-  },
-  "GET get-categories": () => ({
-    data: withCount(db.categories, "categoryId"),
-  }),
-  "POST create-category": (id, b) => {
-    must(b, ["name"]);
-    nameDup(db.categories, b.name);
-    const c = {
-      id: uid("cat"),
-      name: b.name.trim(),
-      description: b.description || "",
-    };
-    db.categories.push(c);
-    return [201, c];
-  },
-  "PUT update-category": (id, b) => {
-    const c = find(db.categories, id);
-    if ("name" in b) {
-      must(b, ["name"]);
-      nameDup(db.categories, b.name, id);
-      c.name = b.name.trim();
-    }
-    if ("description" in b) c.description = b.description;
-    return c;
-  },
-  "DELETE delete-category": (id) => {
-    find(db.categories, id);
-    const n = used("categoryId", id);
-    if (n) E(409, { error: "in_use", enquiries: n });
-    db.categories = db.categories.filter((c) => c.id !== id);
-    return [204, null];
-  },
-  "GET get-statuses": () => ({ data: withCount(sorted(), "statusId") }),
-  "POST create-status": (id, b) => {
-    must(b, ["name"]);
-    nameDup(db.statuses, b.name);
-    const s = {
-      id: uid("st"),
-      name: b.name.trim(),
-      order: Number(b.order) || db.statuses.length + 1,
-      color: b.color || "#6b7688",
-      isFinal: !!b.isFinal,
-    };
-    db.statuses.push(s);
-    return [201, s];
-  },
-  "PUT update-status": (id, b) => {
-    const s = find(db.statuses, id);
-    if ("name" in b) {
-      must(b, ["name"]);
-      nameDup(db.statuses, b.name, id);
-      s.name = b.name.trim();
-    }
-    if ("order" in b) s.order = Number(b.order) || s.order;
-    if ("color" in b) s.color = b.color;
-    if ("isFinal" in b) s.isFinal = !!b.isFinal;
-    return s;
-  },
-  "DELETE delete-status": (id) => {
-    find(db.statuses, id);
-    if (db.statuses.length <= 2) E(409, { error: "min_statuses" });
-    const n = used("statusId", id);
-    if (n) E(409, { error: "in_use", enquiries: n });
-    db.statuses = db.statuses.filter((s) => s.id !== id);
-    return [204, null];
-  },
-};
-async function api(method, path, body, quiet) {
-  const t0 = performance.now();
-  await sleep(90 + Math.random() * 140);
-  const [p, qs] = path.split("?"),
-    [route, id] = p.split("/");
-  let st = 200,
-    out;
-  try {
-    const f = RT[method + " " + route];
-    if (!f) E(404, { error: "not_found" });
-    const o = f(id, body || {}, new URLSearchParams(qs || ""));
-    if (Array.isArray(o)) {
-      st = o[0];
-      out = o[1];
-    } else out = o;
-  } catch (x) {
-    if (x && x.s) {
-      st = x.s;
-      out = x.o;
-    } else throw x;
+  } else if(body && action.includes("category")) {
+    payload={}; if("name" in body) payload.categoryName=body.name; if("description" in body) payload.description=body.description;
+  } else if(body && action.includes("status")) {
+    payload={}; if("name" in body) payload.statusName=body.name; if("isFinal" in body) payload.isActive=!!body.isFinal;
   }
-  persist();
-  if (!quiet)
-    logCall(method, path, body, st, out, Math.round(performance.now() - t0));
-  if (st >= 400) throw Object.assign(new Error(out.error), { out });
+  const t0=performance.now(); let response;
+  try { response=await fetch(`${API_BASE}/${endpoint}`,{method,headers:{Accept:"application/json",...(method!=="GET"?{"Content-Type":"application/json"}:{})},...(method!=="GET"?{body:JSON.stringify(payload ?? {})}:{})}); }
+  catch { throw new Error("The browser could not reach FreeProjectAPI. This may be blocked by provider CORS on static hosting; use `node local-server.cjs` for local development."); }
+  let raw=null; if(response.status!==204){try{raw=await response.json();}catch{}}
+  if(!response.ok || raw?.result===false) throw Object.assign(new Error(raw?.message || `API request failed (${response.status})`),{out:{error:raw?.message || "api_error"}});
+  let out=raw?.data ?? raw;
+  if(action==="get-enquiries" || action==="filter-enquiries"){const rows=Array.isArray(out)?out:[];out={data:rows.map(mapEnquiry),total:rows.length};}
+  if(action==="get-enquiry") out=mapEnquiry(out || {});
+  if(action==="get-categories") out={data:(Array.isArray(out)?out:[]).map(c=>({id:String(c.categoryId),name:c.categoryName,description:c.description||"",enquiries:0}))};
+  if(action==="get-statuses") out={data:(Array.isArray(out)?out:[]).map((s,i)=>({id:String(s.statusId),name:s.statusName,order:i+1,color:"#6b7688",isFinal:/done|resolved|closed/i.test(s.statusName),enquiries:0}))};
+  if(!quiet) logCall(method,endpoint,body,response.status,raw,Math.round(performance.now()-t0));
   return out;
 }
-
 // ================= Console, helpers =================
-const $ = (id) => document.getElementById(id);
-const esc = (s) =>
-  String(s ?? "").replace(
-    /[&<>"]/g,
-    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c],
-  );
-const ago = (t) => {
-  const h = Math.round((Date.now() - t) / HR);
-  return h < 1
-    ? "just now"
-    : h < 24
-      ? h + " h ago"
-      : Math.round(h / 24) + " d ago";
-};
-const dur = (ms) => {
-  const h = Math.max(1, Math.round(ms / HR));
-  return h < 24 ? h + " h" : Math.round(h / 24) + " d";
-};
 function logCall(m, path, body, st, out, ms) {
   const d = document.createElement("div");
   d.className = "call";
@@ -410,9 +58,9 @@ function logCall(m, path, body, st, out, ms) {
   d.innerHTML =
     `<div class="l"><span class="m ${m}">${m}</span><span>/api/Enquiry/${esc(path)}</span><span class="${st < 400 ? "ok" : "bad"}">${st}</span><span class="ms">${ms} ms</span></div>` +
     (body && Object.keys(body).length
-      ? `<pre>→ ${esc(JSON.stringify(body))}</pre>`
+      ? `<pre>${esc(JSON.stringify(body))}</pre>`
       : "") +
-    `<pre>${esc(s.length > 900 ? s.slice(0, 900) + "\n…" : s)}</pre>`;
+    `<pre>${esc(s.length > 900 ? s.slice(0, 900) + "\n?" : s)}</pre>`;
   $("log").prepend(d);
   while ($("log").children.length > 25) $("log").lastChild.remove();
 }
@@ -431,10 +79,10 @@ function msgFor(o) {
   if (o.error === "in_use")
     return `In use by ${o.enquiries} enquiries. Move them to another one first.`;
   if (o.error === "invalid_transition")
-    return `Can’t move from ${o.from} to ${o.to}. Allowed: ${o.allowed.join(" or ")}.`;
+    return `Can?占퐐 move from ${o.from} to ${o.to}. Allowed: ${o.allowed.join(" or ")}.`;
   if (o.error === "validation_failed")
     return `Please fill in: ${o.fields.join(", ")}.`;
-  if (o.error === "duplicate_name") return `“${o.name}” already exists.`;
+  if (o.error === "duplicate_name") return `"${o.name}" already exists.`;
   if (o.error === "min_statuses")
     return "Keep at least two statuses so enquiries can progress.";
   return "Something went wrong. Please try again.";
@@ -509,7 +157,7 @@ async function loadStats() {
     ["Total", r.total],
     ["Open", op.length],
     ["Overdue", od, od > 0],
-    ["High priority open", op.filter((e) => e.priority === "high").length],
+    ["Converted", r.data.filter((e) => e.converted).length],
   ].concat(
     sts.map((s) => [s.name, r.data.filter((e) => e.statusId === s.id).length]),
   );
@@ -525,19 +173,20 @@ async function loadList() {
   [
     ["statusId", "fs"],
     ["categoryId", "fc"],
-    ["priority", "fp"],
     ["q", "q"],
     ["sort", "sf"],
   ].forEach(([k, i]) => {
     const v = $(i).value.trim();
     if (v) q.set(k, v);
   });
-  const r = await api("GET", "filter-enquiries?" + q);
+  const r = await api("GET", "get-enquiries");
+  const filters = new URLSearchParams(q);
+  r.data = r.data.filter(e => (!filters.get("statusId") || e.statusId === filters.get("statusId")) && (!filters.get("categoryId") || e.categoryId === filters.get("categoryId")) && (!filters.get("priority") || e.priority === filters.get("priority")) && (!filters.get("q") || (e.name + " " + e.subject + " " + e.message).toLowerCase().includes(filters.get("q").toLowerCase()))).sort((a,b) => filters.get("sort")==="oldest" ? a.created-b.created : b.created-a.created);
   $("list").innerHTML = r.data.length
     ? r.data
         .map(
           (e) =>
-            `<li class="row" tabindex="0" role="option" aria-selected="${e.id === selected}" data-id="${e.id}"><span class="av sm" aria-hidden="true">${ini(e.name)}</span><div class="rb"><div class="top"><b>${esc(e.subject)}</b><span>${e.overdue ? '<span class="tag late">Overdue</span> ' : ""}${tag(stat(e.statusId))}</span></div><small>${esc(e.name)} · ${esc(catName(e.categoryId))} · ${ago(e.created)}${e.priority === "high" ? " · high priority" : ""}</small></div></li>`,
+            `<li class="row" tabindex="0" role="option" aria-selected="${e.id === selected}" data-id="${e.id}"><span class="av sm" aria-hidden="true">${ini(e.name)}</span><div class="rb"><div class="top"><b>${esc(e.subject)}</b><span>${e.overdue ? '<span class="tag late">Overdue</span> ' : ""}${tag(stat(e.statusId))}</span></div><small>${esc(e.name)} 쨌 ${esc(catName(e.categoryId))} 쨌 ${ago(e.created)}${e.priority === "high" ? " 쨌 high priority" : ""}</small></div></li>`,
         )
         .join("")
     : '<li class="empty">No enquiries match these filters. Clear them or create a new enquiry.</li>';
@@ -569,26 +218,23 @@ async function loadDetail(id) {
     late = !s.isFinal && Date.now() > due(e),
     fn = e.name.split(" ")[0];
   $("detail").innerHTML = `<div class="detail"><h2>${esc(e.subject)}</h2>
-  <div class="meta">${esc(e.name)} · ${esc(e.email)} · received ${ago(e.created)} · <span class="${late ? "late" : ""}">${s.isFinal ? "SLA stopped" : late ? "SLA overdue by " + dur(Date.now() - due(e)) : "SLA due in " + dur(due(e) - Date.now())}</span></div>
+  <div class="meta">${esc(e.name)} 쨌 ${esc(e.email)} 쨌 received ${ago(e.created)} 쨌 <span class="${late ? "late" : ""}">${s.isFinal ? "SLA stopped" : late ? "SLA overdue by " + dur(Date.now() - due(e)) : "SLA due in " + dur(due(e) - Date.now())}</span></div>
   <div class="msg">${esc(e.message)}</div>
   <ol class="steps" aria-label="Status progress">${sts.map((x, j) => `<li class="${j === i ? "cur" : j < i ? "past" : ""}">${esc(x.name)}</li>`).join("")}</ol>
   <div class="ctl">${next ? `<button class="pri" data-to="${next.id}">Move to ${esc(next.name)}</button>` : ""}${prev ? `<button data-to="${prev.id}">Back to ${esc(prev.name)}</button>` : ""}</div>
   <div class="ctl"><label for="cat">Category</label><select id="cat">${cats.map((c) => `<option value="${c.id}" ${c.id === e.categoryId ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select>
-   <label for="as">Assignee</label><select id="as"><option value="">Unassigned</option>${["Ayesha", "Daniel", "Kasun"].map((a) => `<option ${a === e.assignee ? "selected" : ""}>${a}</option>`).join("")}</select>
    <button class="dan" id="del">Delete</button></div>
   ${e.history.length ? "<h3>Status history</h3>" + e.history.map((h) => `<div class="note">${esc(h.from)} to ${esc(h.to)}<small>${ago(h.at)}</small></div>`).join("") : ""}
-  <h3>Customer replies</h3>
-  ${e.replies.length ? e.replies.map((r) => `<div class="note">${esc(r.text)}<small>Sent to ${esc(e.email)} · ${ago(r.at)}</small></div>`).join("") : '<p class="meta">No replies yet. The first reply moves a new enquiry to the next status.</p>'}
+  <h3>Customer feedback</h3>
+  ${e.replies.length ? e.replies.map((r) => `<div class="note">${esc(r.text)}<small>Sent to ${esc(e.email)} 쨌 ${ago(r.at)}</small></div>`).join("") : '<p class="meta">No replies yet. The first reply moves a new enquiry to the next status.</p>'}
   <select id="tpl" aria-label="Reply template"><option value="">Start from a template</option><option value="ack">Acknowledge receipt</option><option value="info">Ask for more information</option><option value="done">Confirm resolution</option></select>
-  <textarea id="rt" rows="3" placeholder="Write a reply to the customer" aria-label="Reply" style="margin:8px 0"></textarea>
-  <button class="pri" id="send">Send reply</button>
-  <h3>Internal notes</h3>
-  ${e.notes.length ? e.notes.map((n) => `<div class="note">${esc(n.text)}<small>${ago(n.at)}</small></div>`).join("") : '<p class="meta">No notes yet.</p>'}
-  <div style="display:flex;gap:8px"><input id="nt" placeholder="Add a note for your team" aria-label="Note"><button class="pri" id="addNote">Add note</button></div></div>`;
+  <textarea id="rt" rows="3" placeholder="Record customer feedback" aria-label="Customer feedback" style="margin:8px 0"></textarea>
+  <button class="pri" id="send">Save feedback</button>
+  </div>`;
   const T = {
-    ack: `Hi ${fn}, thanks for getting in touch. We’ve received your enquiry and will update you shortly.`,
+    ack: `Hi ${fn}, thanks for getting in touch. We?占퐒e received your enquiry and will update you shortly.`,
     info: `Hi ${fn}, could you share a few more details so we can help? Order numbers or dates would be useful.`,
-    done: `Hi ${fn}, we’ve resolved your enquiry. Reply to this message if anything still looks wrong.`,
+    done: `Hi ${fn}, we?占퐒e resolved your enquiry. Reply to this message if anything still looks wrong.`,
   };
   $("tpl").onchange = () => {
     $("rt").value = T[$("tpl").value] || "";
@@ -598,9 +244,7 @@ async function loadDetail(id) {
     .forEach((b) => (b.onclick = () => upd(id, { statusId: b.dataset.to })));
   if ($("bad")) $("bad").onclick = () => upd(id, { statusId: bad.id });
   $("cat").onchange = () => upd(id, { categoryId: $("cat").value });
-  $("as").onchange = () => upd(id, { assignee: $("as").value || null });
   $("send").onclick = () => upd(id, { reply: $("rt").value });
-  $("addNote").onclick = () => upd(id, { note: $("nt").value });
   $("del").onclick = (ev) =>
     arm(ev.currentTarget, async () => {
       await run(() => api("DELETE", "delete-enquiry/" + id));
@@ -625,12 +269,16 @@ function renderManage() {
     .join("");
 }
 async function refresh() {
-  await loadMeta(true);
-  loadStats();
-  loadDash();
-  await loadList();
-  await loadDetail(selected);
-  renderManage();
+  const state=$("apiState"); state.hidden=false; state.classList.remove("error"); state.textContent="Loading enquiries from FreeProjectAPI...";
+  try {
+    await loadMeta(true);
+    await Promise.all([loadStats(),loadDash(),loadList(),loadDetail(selected)]);
+    renderManage(); state.hidden=true;
+  } catch(e) {
+    state.hidden=false; state.classList.add("error");
+    state.textContent=e.message || "Could not load data from FreeProjectAPI. Please refresh to try again.";
+    $("list").innerHTML='<li class="empty">Enquiries could not be loaded. Check your connection and refresh.</li>';
+  }
 }
 async function show(t) {
   tab = t;
@@ -654,7 +302,7 @@ async function loadDash() {
   const pct = d.length
       ? Math.round(((d.length - op.length) / d.length) * 100)
       : 0,
-    hi = op.filter((e) => e.priority === "high").length;
+    convertedCount = d.filter((e) => e.converted).length;
   const days = Array.from({ length: 7 }, () => ({ o: 0, c: 0 }));
   d.forEach((e) => {
     const i = 6 - Math.min(6, Math.floor((Date.now() - e.created) / (24 * HR)));
@@ -669,10 +317,6 @@ async function loadDash() {
   const pts = tot
     .map((v, i) => `${(i * 100) / 6},${30 - (v / max) * 26}`)
     .join(" ");
-  const pri = ["high", "normal", "low"].map(
-      (p) => op.filter((e) => e.priority === p).length,
-    ),
-    pm = Math.max(1, ...pri);
   const card = (c, t, n, v, sub) =>
     `<div class="card sc" style="--c:${c}"><h4>${t}</h4><div class="top"><span class="n">${n}</span>${v}</div>${sub}</div>`;
   $("cards").innerHTML =
@@ -688,7 +332,7 @@ async function loadDash() {
       "Open enquiries",
       op.length,
       "",
-      `<div class="bar"><i style="width:${op.length ? Math.round(((op.length - od) / op.length) * 100) : 100}%"></i></div><small>Within SLA ${op.length - od} · Overdue ${od}</small>`,
+      `<div class="bar"><i style="width:${op.length ? Math.round(((op.length - od) / op.length) * 100) : 100}%"></i></div><small>Within SLA ${op.length - od} 쨌 Overdue ${od}</small>`,
     ) +
     card(
       "#6cc644",
@@ -699,10 +343,10 @@ async function loadDash() {
     ) +
     card(
       "#2ecfc9",
-      "High priority open",
-      hi,
-      `<div class="mb" aria-hidden="true">${pri.map((v) => `<i style="height:${(v / pm) * 100}%"></i>`).join("")}</div>`,
-      `<small>High ${pri[0]} · Normal ${pri[1]} · Low ${pri[2]}</small>`,
+      "Converted enquiries",
+      convertedCount,
+      `<div class="donut" style="--p:${d.length ? Math.round(convertedCount / d.length * 100) : 0}" role="img" aria-label="${d.length ? Math.round(convertedCount / d.length * 100) : 0}% converted"></div>`,
+      `<small>${d.length ? Math.round(convertedCount / d.length * 100) : 0}% of enquiries</small>`,
     );
   $("week").innerHTML =
     `<div class="wk">${days.map((p, i) => `<div class="col"><div class="tr" title="${p.o} open, ${p.c} completed"><i style="height:${(p.o / max) * 100}%;background:var(--acc)"></i><i style="height:${(p.c / max) * 100}%;background:#2ecfc9"></i></div><small>${lbl(i)}</small></div>`).join("")}</div><p class="mute" style="margin:12px 0 0"><span class="dot" style="background:var(--acc);margin-left:0"></span>Open<span class="dot" style="background:#2ecfc9"></span>Completed</p>`;
@@ -721,7 +365,7 @@ async function loadDash() {
     .slice(0, 3)
     .map(
       (e) =>
-        `<div class="rc"><b>${esc(e.subject)}</b> <small>${ago(e.created)}</small><br><small>${esc(e.name)} · ${esc(catName(e.categoryId))} · ${esc(stat(e.statusId).name)}</small></div>`,
+        `<div class="rc"><b>${esc(e.subject)}</b> <small>${ago(e.created)}</small><br><small>${esc(e.name)} 쨌 ${esc(catName(e.categoryId))} 쨌 ${esc(stat(e.statusId).name)}</small></div>`,
     )
     .join("");
 }
@@ -763,14 +407,8 @@ $("q").oninput = () => {
   clearTimeout(tm);
   tm = setTimeout(loadList, 300);
 };
-["fs", "fc", "fp", "sf"].forEach((i) => ($(i).onchange = loadList));
-$("rst").onclick = () => {
-  db = JSON.parse(JSON.stringify(seed));
-  persist();
-  selected = null;
-  refresh();
-  toast("Demo data reset.");
-};
+["fs", "fc", "sf"].forEach((i) => ($(i).onchange = loadList));
+$("rst").onclick = () => { selected = null; refresh(); toast("Data refreshed from FreeProjectAPI."); };
 for (const id of ["v-cat", "v-sta"])
   $(id).addEventListener("click", (ev) => {
     const b = ev.target.closest("button");
@@ -791,6 +429,7 @@ const FORMS = {
   enquiry: [
     ["name", "Name", "text"],
     ["email", "Email", "email"],
+    ["phone", "Phone", "tel"],
     ["subject", "Subject", "text"],
     ["message", "Message", "textarea"],
     ["categoryId", "Category", "cat"],

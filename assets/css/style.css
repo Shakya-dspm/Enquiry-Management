@@ -108,6 +108,10 @@ ul {
     text-align: center;
 }
 
+.api-state { margin: 10px 24px 0; padding: 9px 12px; border-radius: 9px; color: var(--mute); background: var(--surface-2); font-size: 13px; }
+.api-state.error { color: var(--danger); }
+.api-state[hidden] { display: none; }
+
 :focus-visible {
     outline: 2px solid var(--brand);
     outline-offset: 2px;

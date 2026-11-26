@@ -47,11 +47,11 @@
                     <path d="M6.5 7.5l4 3M13.5 13.5l4 3" />
                 </svg><span>Statuses</span></button>
         </nav>
-        <div class="side-actions"><button class="pri" id="newBtn">+ New enquiry</button><button id="rst">Reset demo
-                data</button></div>
+        <div class="side-actions"><button class="pri" id="newBtn">+ New enquiry</button><button id="rst">Refresh data</button></div>
     </header>
     <main>
         <div>
+            <div id="apiState" class="api-state" role="status" aria-live="polite">Loading enquiries from FreeProjectAPI…</div>
             <div class="topbar">
                 <div>
                     <h2 class="greet">Welcome back, Support Team</h2>
@@ -96,12 +96,6 @@
                                 aria-label="Search enquiries">
                             <select id="fs" aria-label="Filter by status"></select>
                             <select id="fc" aria-label="Filter by category"></select>
-                            <select id="fp" aria-label="Filter by priority">
-                                <option value="">All priorities</option>
-                                <option>high</option>
-                                <option>normal</option>
-                                <option>low</option>
-                            </select>
                             <select id="sf" aria-label="Sort">
                                 <option value="newest">Newest first</option>
                                 <option value="oldest">Oldest first</option>
