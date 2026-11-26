@@ -6,9 +6,9 @@ This static frontend reads enquiry records, categories, and statuses from FreePr
 
 Run `node server.js` and open <http://localhost:8080>. The server serves the static files and proxies `/api/Enquiry/*` requests to `https://api.freeprojectapi.com`, avoiding browser CORS checks during local development. It uses Node's built-in modules and requires no install step.
 
-## Static hosting limitation
+## GitHub Pages deployment
 
-The provider's current `GET /api/Enquiry/get-enquiries` response does not include `Access-Control-Allow-Origin`. The API advertises allowed methods in preflight responses, but that alone does not permit browser reads. GitHub Pages cannot run this Node proxy, so a static deployment needs the provider to enable CORS or a separately hosted HTTPS proxy. The app uses the full provider URL on non-local hosts and shows the connection/CORS error if the browser blocks it.
+The app calls `https://api.freeprojectapi.com/api/Enquiry` directly when hosted outside local development. The API currently allows cross-origin browser requests, so the static site can load and write data from GitHub Pages without a Node server. If requests fail, check the browser console for the provider's response and confirm the API is available. A CORS error means the API provider has changed its cross-origin policy; GitHub Pages itself cannot proxy API requests.
 
 ## Endpoints used
 

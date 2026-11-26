@@ -93,7 +93,7 @@ async function api(method, path, body, quiet) {
       ...(method !== "GET" ? { body: JSON.stringify(payload ?? {}) } : {}),
     });
   } catch {
-    throw new Error("The browser could not reach FreeProjectAPI. Static hosting may be blocked by provider CORS; run node server.js locally.");
+    throw new Error("The browser could not reach FreeProjectAPI. Check your internet connection and whether the API is available; if the browser reports a CORS error, the API provider must allow this site's origin.");
   }
   let raw = null;
   if (response.status !== 204) { try { raw = await response.json(); } catch {} }
