@@ -51,20 +51,16 @@
     </header>
     <main>
         <div>
-            <div id="apiState" class="api-state" role="status" aria-live="polite">Loading enquiries from FreeProjectAPI…</div>
+            <div id="apiState" class="api-state" role="status" aria-live="polite">Loading enquiries from FreeProjectAPI...</div>
             <div class="topbar">
                 <div>
-                    <h2 class="greet">Welcome back, Support Team</h2>
+                    <h2 class="greet">Enquiry overview</h2>
                     <p class="sub" id="today"></p>
                 </div><label class="search"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
                         <circle cx="11" cy="11" r="7" />
                         <path d="M20 20l-4-4" />
                     </svg><input id="gs" type="search" placeholder="Search enquiries"
-                        aria-label="Search enquiries"></label><button class="icon-btn" aria-label="Notifications"><svg
-                        class="ic" viewBox="0 0 24 24" aria-hidden="true">
-                        <path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8" />
-                        <path d="M10 20a2 2 0 0 0 4 0" />
-                    </svg><span class="badge"></span></button><span class="av" aria-hidden="true">ST</span>
+                        aria-label="Search enquiries"></label>
             </div>
             <div class="view dash" id="v-dash">
                 <div class="cards" id="cards"></div>
@@ -77,11 +73,11 @@
                     </div>
                     <div class="card">
                         <div class="ch">
-                            <h3>Top agents</h3>
+                            <h3>Enquiries by category</h3>
                         </div>
-                        <div id="agents"></div>
+                        <div id="categoryCounts"></div>
                         <div class="ch">
-                            <h3>Recent activity</h3><button class="pill" data-go="enq">View all</button>
+                            <h3>Recent enquiries</h3><button class="pill" data-go="enq">View all</button>
                         </div>
                         <div id="recent"></div>
                     </div>
@@ -92,15 +88,14 @@
                 <div class="split">
                     <section aria-label="Enquiries">
                         <div class="tools">
-                            <input id="q" class="w" type="search" placeholder="Search name or subject"
+                            <input id="q" class="w" type="search" placeholder="Search customer or message"
                                 aria-label="Search enquiries">
                             <select id="fs" aria-label="Filter by status"></select>
                             <select id="fc" aria-label="Filter by category"></select>
                             <select id="sf" aria-label="Sort">
                                 <option value="newest">Newest first</option>
                                 <option value="oldest">Oldest first</option>
-                                <option value="priority">Priority</option>
-                                <option value="due">SLA due soonest</option>
+                                <option value="followup">Follow-up date</option>
                             </select>
                         </div>
                         <ul id="list" role="listbox"></ul>
@@ -116,7 +111,7 @@
                     <thead>
                         <tr>
                             <th>Name</th>
-                            <th>Description</th>
+                            <th>Active</th>
                             <th>Enquiries</th>
                             <th></th>
                         </tr>
@@ -128,14 +123,13 @@
                 <div class="top">
                     <h2>Statuses</h2><button class="pri" data-new="status">Add status</button>
                 </div>
-                <p class="meta">Enquiries move one step at a time, in the order below. Statuses that stop the SLA clock
-                    mark work as done.</p>
+                <p class="meta">Statuses are the labels returned by the API. Workflow order and completion rules are not provided.</p>
                 <table>
                     <thead>
                         <tr>
-                            <th>Order</th>
+
                             <th>Name</th>
-                            <th>Stops SLA clock</th>
+                            <th>Active</th>
                             <th>Enquiries</th>
                             <th></th>
                         </tr>

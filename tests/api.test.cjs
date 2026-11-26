@@ -25,7 +25,7 @@ test('loads and maps provider enquiry records with a mocked response', async () 
   assert.equal(result.data[0].id, '42');
   assert.equal(result.data[0].name, 'Demo');
   assert.equal(result.data[0].categoryId, '7');
-  assert.equal(result.data[0].subject, 'Need help');
+  assert.equal(result.data[0].message, 'Need help');
 });
 
 test('surfaces provider errors without attempting a write', async () => {

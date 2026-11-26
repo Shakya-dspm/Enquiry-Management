@@ -22,7 +22,7 @@
     padding-top: env(safe-area-inset-top, 0px);
     padding-bottom: env(safe-area-inset-bottom, 0px);
 }
- 
+
 @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
         --bg: #0e131c;
@@ -1093,5 +1093,54 @@ dialog .chk input {
     *::after {
         animation: none !important;
         transition: none !important;
+    }
+}
+.record-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 0 20px;
+    margin: 18px 0;
+}
+
+.record-fields div {
+    min-width: 0;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--line);
+}
+
+.record-fields dt {
+    color: var(--mute);
+    font-size: 12px;
+}
+
+.record-fields dd {
+    margin: 3px 0 0;
+    overflow-wrap: anywhere;
+}
+
+.category-breakdown {
+    display: grid;
+    gap: 8px;
+    margin: 8px 0 24px;
+}
+
+.category-breakdown div {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 9px 11px;
+    border-radius: 9px;
+    background: var(--surface-2);
+}
+
+.category-breakdown span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+@media (max-width: 700px) {
+    .api-state {
+        margin-inline: 16px;
     }
 }

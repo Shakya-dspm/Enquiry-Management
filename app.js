@@ -1,519 +1,280 @@
-﻿// Local development uses the same-origin proxy in local-server.cjs. Static deployments
-// use the provider URL directly; the provider currently omits ACAO on actual responses.
 const API_BASE = typeof location !== "undefined" && /^(localhost|127\.0\.0\.1)$/.test(location.hostname)
   ? "/api/Enquiry"
   : "https://api.freeprojectapi.com/api/Enquiry";
-const HR = 36e5, SLA = { high: 4, normal: 24, low: 72 };
 const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-const ago = (t) => { const h=Math.round((Date.now()-t)/HR); return h<1?"just now":h<24?h+" h ago":Math.round(h/24)+" d ago"; };
-const dur = (ms) => { const h=Math.max(1,Math.round(ms/HR)); return h<24?h+" h":Math.round(h/24)+" d"; };
-const due = (e) => e.created + (SLA[e.priority] || 24) * HR;
-function mapEnquiry(x) {
-  const created=Date.parse(x.enquiryDate || x.created || "") || Date.now();
-  const message=x.message ?? "";
-  const e={id:String(x.enquiryId ?? x.id),name:x.customerName ?? x.name ?? "Unknown customer",email:x.customerEmail ?? x.email ?? "",subject:x.subject ?? (message.length>72?message.slice(0,69)+"...":message || "Enquiry"),message,categoryId:String(x.categoryId ?? ""),statusId:String(x.statusId ?? ""),priority:x.priority ?? "normal",converted:!!x.isConverted,assignee:x.assignee ?? null,notes:[],replies:x.feedback?[{text:x.feedback,at:created}]:[],history:[],created};
-  e.due=due(e); e.overdue=!stat(e.statusId).isFinal && Date.now()>e.due; return e;
+const esc = (value) => String(value ?? "").replace(/[&<>\"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const dateText = (value) => { if (!value) return "Not provided"; const date = new Date(value); return Number.isNaN(date.getTime()) ? "Date unavailable" : date.toLocaleString(); };
+const dateInput = (value) => { if (!value) return ""; const date = new Date(value); return Number.isNaN(date.getTime()) ? "" : new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
+const ago = (value) => {
+  const time = new Date(value).getTime();
+  if (!value || !Number.isFinite(time)) return "Not provided";
+  const days = Math.floor((Date.now() - time) / 86400000);
+  return days < 0 ? (days === -1 ? "Tomorrow" : `In ${Math.abs(days)} days`) : days === 0 ? "Today" : days === 1 ? "1 day ago" : `${days} days ago`;
+};
+function mapEnquiry(row) {
+  return {
+    id: String(row.enquiryId ?? row.id ?? ""),
+    name: row.customerName ?? "Unknown customer",
+    email: row.customerEmail ?? "",
+    phone: row.customerPhone ?? "",
+    message: row.message ?? "",
+    categoryId: String(row.categoryId ?? ""),
+    categoryName: row.categoryName ?? "Uncategorised",
+    statusId: String(row.statusId ?? ""),
+    statusName: row.statusName ?? "Unknown status",
+    enquiryType: row.enquiryType ?? "",
+    converted: Boolean(row.isConverted),
+    created: row.enquiryDate ?? null,
+    followUp: row.followUpDate ?? null,
+    feedback: row.feedback ?? "",
+  };
 }
-async function api(method,path,body,quiet) {
-  const route=path.split("?")[0], parts=route.split("/"), action=parts[0], id=parts[1];
-  const endpoints={"get-enquiries":"get-enquiries","get-categories":"get-categories","get-statuses":"get-statuses","get-enquiry":"get-enquiry/"+id,"create-enquiry":"create-enquiry","update-enquiry":"update-enquiry/"+id,"delete-enquiry":"delete-enquiry/"+id,"create-category":"create-category","update-category":"update-category/"+id,"delete-category":"delete-category/"+id,"create-status":"create-status","update-status":"update-status/"+id,"delete-status":"delete-status/"+id};
-  const endpoint=endpoints[action] || (action==="filter-enquiries"?"get-enquiries":null);
-  if(!endpoint) throw new Error("Unsupported API operation");
-  let payload=body;
-  if(body && action.includes("enquiry")) {
-    payload={};
-    if(action==="create-enquiry") Object.assign(payload,{customerName:body.name,customerEmail:body.email,customerPhone:body.phone || "",message:[body.subject,body.message].filter(Boolean).join("\n\n"),categoryId:Number(body.categoryId),statusId:Number(sts.find(s=>/new/i.test(s.name))?.id || 0),enquiryType:"",enquiryDate:new Date().toISOString(),followUpDate:new Date().toISOString()});
-    else {
-      if("name" in body) payload.customerName=body.name;
-      if("email" in body) payload.customerEmail=body.email;
-      if("message" in body) payload.message=body.message;
-      if("categoryId" in body) payload.categoryId=Number(body.categoryId);
-      if("statusId" in body) payload.statusId=Number(body.statusId);
-      if("reply" in body || "note" in body) payload.feedback=body.reply ?? body.note;
+async function api(method, path, body, quiet) {
+  const [route] = path.split("?"), [action, id] = route.split("/");
+  const endpoints = {
+    "get-enquiries": "get-enquiries", "get-enquiry": `get-enquiry/${id}`,
+    "get-categories": "get-categories", "get-statuses": "get-statuses",
+    "create-enquiry": "create-enquiry", "update-enquiry": `update-enquiry/${id}`,
+    "delete-enquiry": `delete-enquiry/${id}`,
+    "create-category": "create-category", "update-category": `update-category/${id}`,
+    "delete-category": `delete-category/${id}`,
+    "create-status": "create-status", "update-status": `update-status/${id}`,
+    "delete-status": `delete-status/${id}`,
+  };
+  const endpoint = endpoints[action];
+  if (!endpoint) throw new Error(`Unsupported API operation: ${action}`);
+  let payload = body;
+  if (body && action.includes("enquiry")) {
+    payload = {};
+    if (action === "create-enquiry") {
+      const newStatus = statuses.find((s) => s.name.toLowerCase() === "new");
+      Object.assign(payload, {
+        customerName: body.name,
+        customerEmail: body.email,
+        customerPhone: body.phone || "",
+        message: body.message,
+        categoryId: Number(body.categoryId),
+        statusId: newStatus ? Number(newStatus.id) : undefined,
+        enquiryType: body.enquiryType || "",
+        enquiryDate: new Date().toISOString(),
+        followUpDate: body.followUp || null,
+      });
+    } else {
+      if ("categoryId" in body) payload.categoryId = Number(body.categoryId);
+      if ("statusId" in body) payload.statusId = Number(body.statusId);
+      if ("followUp" in body) payload.followUpDate = body.followUp || null;
+      if ("feedback" in body) payload.feedback = body.feedback;
     }
-  } else if(body && action.includes("category")) {
-    payload={}; if("name" in body) payload.categoryName=body.name; if("description" in body) payload.description=body.description;
-  } else if(body && action.includes("status")) {
-    payload={}; if("name" in body) payload.statusName=body.name; if("isFinal" in body) payload.isActive=!!body.isFinal;
+  } else if (body && action.includes("category")) {
+    payload = {};
+    if ("name" in body) payload.categoryName = body.name;
+    if ("isActive" in body) payload.isActive = Boolean(body.isActive);
+  } else if (body && action.includes("status")) {
+    payload = {};
+    if ("name" in body) payload.statusName = body.name;
+    if ("isActive" in body) payload.isActive = Boolean(body.isActive);
   }
-  const t0=performance.now(); let response;
-  try { response=await fetch(`${API_BASE}/${endpoint}`,{method,headers:{Accept:"application/json",...(method!=="GET"?{"Content-Type":"application/json"}:{})},...(method!=="GET"?{body:JSON.stringify(payload ?? {})}:{})}); }
-  catch { throw new Error("The browser could not reach FreeProjectAPI. This may be blocked by provider CORS on static hosting; use `node local-server.cjs` for local development."); }
-  let raw=null; if(response.status!==204){try{raw=await response.json();}catch{}}
-  if(!response.ok || raw?.result===false) throw Object.assign(new Error(raw?.message || `API request failed (${response.status})`),{out:{error:raw?.message || "api_error"}});
-  let out=raw?.data ?? raw;
-  if(action==="get-enquiries" || action==="filter-enquiries"){const rows=Array.isArray(out)?out:[];out={data:rows.map(mapEnquiry),total:rows.length};}
-  if(action==="get-enquiry") out=mapEnquiry(out || {});
-  if(action==="get-categories") out={data:(Array.isArray(out)?out:[]).map(c=>({id:String(c.categoryId),name:c.categoryName,description:c.description||"",enquiries:0}))};
-  if(action==="get-statuses") out={data:(Array.isArray(out)?out:[]).map((s,i)=>({id:String(s.statusId),name:s.statusName,order:i+1,color:"#6b7688",isFinal:/done|resolved|closed/i.test(s.statusName),enquiries:0}))};
-  if(!quiet) logCall(method,endpoint,body,response.status,raw,Math.round(performance.now()-t0));
-  return out;
+  const started = performance.now();
+  let response;
+  try {
+    response = await fetch(`${API_BASE}/${endpoint}`, {
+      method,
+      headers: { Accept: "application/json", ...(method !== "GET" ? { "Content-Type": "application/json" } : {}) },
+      ...(method !== "GET" ? { body: JSON.stringify(payload ?? {}) } : {}),
+    });
+  } catch {
+    throw new Error("The browser could not reach FreeProjectAPI. Static hosting may be blocked by provider CORS; run node local-server.cjs locally.");
+  }
+  let raw = null;
+  if (response.status !== 204) { try { raw = await response.json(); } catch {} }
+  if (!response.ok || raw?.result === false) {
+    throw Object.assign(new Error(raw?.message || `API request failed (${response.status})`), { out: raw });
+  }
+  let data = raw?.data ?? raw;
+  if (action === "get-enquiries") data = (Array.isArray(data) ? data : []).map(mapEnquiry);
+  if (action === "get-enquiry") data = mapEnquiry(data || {});
+  if ((action === "create-enquiry" || action === "update-enquiry") && data && (data.enquiryId != null || data.id != null)) data = mapEnquiry(data);
+  if (action === "get-categories") data = (Array.isArray(data) ? data : []).map((item) => ({
+    id: String(item.categoryId), name: item.categoryName ?? "Unnamed category",
+    isActive: Boolean(item.isActive), enquiries: 0,
+  }));
+  if (action === "get-statuses") data = (Array.isArray(data) ? data : []).map((item) => ({
+    id: String(item.statusId), name: item.statusName ?? "Unnamed status",
+    isActive: Boolean(item.isActive), enquiries: 0,
+  }));
+  if (!quiet) logCall(method, endpoint, body, response.status, raw, Math.round(performance.now() - started));
+  return action === "get-enquiries" ? { data, total: data.length } : data;
 }
 // ================= Console, helpers =================
-function logCall(m, path, body, st, out, ms) {
-  const d = document.createElement("div");
-  d.className = "call";
-  const s = out === null ? "(no content)" : JSON.stringify(out, null, 2);
-  d.innerHTML =
-    `<div class="l"><span class="m ${m}">${m}</span><span>/api/Enquiry/${esc(path)}</span><span class="${st < 400 ? "ok" : "bad"}">${st}</span><span class="ms">${ms} ms</span></div>` +
-    (body && Object.keys(body).length
-      ? `<pre>${esc(JSON.stringify(body))}</pre>`
-      : "") +
-    `<pre>${esc(s.length > 900 ? s.slice(0, 900) + "\n?" : s)}</pre>`;
-  $("log").prepend(d);
+function logCall(method, path, body, status, output, ms) {
+  const row = document.createElement("div");
+  row.className = "call";
+  const responseText = output === null ? "(no content)" : JSON.stringify(output, null, 2);
+  row.innerHTML = `<div class="l"><span class="m ${esc(method)}">${esc(method)}</span><span>/api/Enquiry/${esc(path)}</span><span class="${status < 400 ? "ok" : "bad"}">${status}</span><span class="ms">${ms} ms</span></div>${body && Object.keys(body).length ? `<pre>${esc(JSON.stringify(body))}</pre>` : ""}<pre>${esc(responseText.length > 900 ? responseText.slice(0, 900) + "..." : responseText)}</pre>`;
+  $("log").prepend(row);
   while ($("log").children.length > 25) $("log").lastChild.remove();
 }
-$("clr").onclick = () => {
-  $("log").innerHTML = "";
-};
-let tt;
-function toast(m) {
-  const t = $("toast");
-  t.textContent = m;
-  t.classList.add("on");
-  clearTimeout(tt);
-  tt = setTimeout(() => t.classList.remove("on"), 4000);
+$("clr").onclick = () => { $("log").innerHTML = ""; };
+let toastTimer;
+function toast(message) {
+  const node = $("toast"); node.textContent = message; node.classList.add("on");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => node.classList.remove("on"), 4000);
 }
-function msgFor(o) {
-  if (o.error === "in_use")
-    return `In use by ${o.enquiries} enquiries. Move them to another one first.`;
-  if (o.error === "invalid_transition")
-    return `Can?占퐐 move from ${o.from} to ${o.to}. Allowed: ${o.allowed.join(" or ")}.`;
-  if (o.error === "validation_failed")
-    return `Please fill in: ${o.fields.join(", ")}.`;
-  if (o.error === "duplicate_name") return `"${o.name}" already exists.`;
-  if (o.error === "min_statuses")
-    return "Keep at least two statuses so enquiries can progress.";
-  return "Something went wrong. Please try again.";
-}
-async function run(f) {
-  try {
-    return await f();
-  } catch (e) {
-    if (e.out) {
-      toast(msgFor(e.out));
-      return;
-    }
-    throw e;
-  }
-}
-function arm(b, fn) {
-  if (b.dataset.armed) {
-    fn();
-    return;
-  }
-  b.dataset.armed = 1;
-  const t = b.textContent;
-  b.textContent = "Confirm delete";
-  setTimeout(() => {
-    delete b.dataset.armed;
-    b.textContent = t;
-  }, 3000);
+function errorText(error) { return error?.out?.message || error?.message || "Something went wrong. Try again."; }
+function arm(button, action) {
+  if (button.dataset.armed) { action(); return; }
+  button.dataset.armed = "1"; const label = button.textContent; button.textContent = "Confirm delete";
+  setTimeout(() => { delete button.dataset.armed; button.textContent = label; }, 3000);
 }
 
-// ================= State and rendering =================
-let cats = [],
-  sts = [],
-  selected = null,
-  tab = "enq";
-const stat = (id) =>
-  sts.find((s) => s.id === id) || {
-    name: "Unknown",
-    color: "#888",
-    isFinal: false,
-  };
-const catName = (id) =>
-  (cats.find((c) => c.id === id) || { name: "Uncategorised" }).name;
-const tag = (s) =>
-  `<span class="tag"><i style="background:${esc(s.color)}"></i>${esc(s.name)}</span>`;
-const ini = (n) =>
-  n
-    .split(" ")
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-const opts = (arr, all) =>
-  (all ? `<option value="">${all}</option>` : "") +
-  arr.map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join("");
-const setOpts = (id, h) => {
-  const v = $(id).value;
-  $(id).innerHTML = h;
-  $(id).value = v;
-};
-
-async function loadMeta(quiet) {
-  cats = (await api("GET", "get-categories", null, quiet)).data;
-  sts = (await api("GET", "get-statuses", null, quiet)).data;
-  setOpts("fs", opts(sts, "All statuses"));
-  setOpts("fc", opts(cats, "All categories"));
+let categories = [], statuses = [], enquiries = [], selected = null;
+const labelFor = (items, item) => items.filter((candidate) => candidate.name === item.name).length > 1 ? `${item.name} (ID ${item.id})` : item.name;
+const statusFor = (id) => statuses.find((item) => item.id === String(id)) || { id: String(id), name: "Unknown status", isActive: false };
+const statusLabel = (id) => labelFor(statuses, statusFor(id));
+const categoryFor = (id, fallback = "Uncategorised") => { const item = categories.find((entry) => entry.id === String(id)); return item ? labelFor(categories, item) : fallback; };
+const tag = (name, active = true) => `<span class="tag"><i style="background:${active ? "#17855a" : "#8a93a3"}"></i>${esc(name)}</span>`;
+const initials = (name) => String(name || "?").split(/\s+/).map((word) => word[0]).slice(0, 2).join("").toUpperCase();
+const options = (items, allLabel) => (allLabel ? `<option value="">${allLabel}</option>` : "") + items.map((item) => `<option value="${esc(item.id)}">${esc(labelFor(items, item))}</option>`).join("");
+function setOptions(id, html) { const old = $(id).value; $(id).innerHTML = html; $(id).value = old; }
+async function loadMeta() {
+  const [categoryResponse, statusResponse] = await Promise.all([api("GET", "get-categories", null, true), api("GET", "get-statuses", null, true)]);
+  categories = categoryResponse.data; statuses = statusResponse.data;
+  setOptions("fs", options(statuses, "All statuses"));
+  setOptions("fc", options(categories, "All categories"));
 }
-async function loadStats() {
-  const r = await api("GET", "get-enquiries", null, true),
-    op = r.data.filter((e) => !stat(e.statusId).isFinal),
-    od = op.filter((e) => e.overdue).length;
-  const items = [
-    ["Total", r.total],
-    ["Open", op.length],
-    ["Overdue", od, od > 0],
-    ["Converted", r.data.filter((e) => e.converted).length],
-  ].concat(
-    sts.map((s) => [s.name, r.data.filter((e) => e.statusId === s.id).length]),
-  );
-  $("stats").innerHTML = items
-    .map(
-      ([l, v, w]) =>
-        `<div class="stat${w ? " warn" : ""}"><b>${v}</b><small>${esc(l)}</small></div>`,
-    )
-    .join("");
-}
-async function loadList() {
-  const q = new URLSearchParams();
-  [
-    ["statusId", "fs"],
-    ["categoryId", "fc"],
-    ["q", "q"],
-    ["sort", "sf"],
-  ].forEach(([k, i]) => {
-    const v = $(i).value.trim();
-    if (v) q.set(k, v);
+function updateCounts() {
+  const categoryCounts = new Map(), statusCounts = new Map();
+  enquiries.forEach((item) => {
+    categoryCounts.set(item.categoryId, (categoryCounts.get(item.categoryId) || 0) + 1);
+    statusCounts.set(item.statusId, (statusCounts.get(item.statusId) || 0) + 1);
   });
-  const r = await api("GET", "get-enquiries");
-  const filters = new URLSearchParams(q);
-  r.data = r.data.filter(e => (!filters.get("statusId") || e.statusId === filters.get("statusId")) && (!filters.get("categoryId") || e.categoryId === filters.get("categoryId")) && (!filters.get("priority") || e.priority === filters.get("priority")) && (!filters.get("q") || (e.name + " " + e.subject + " " + e.message).toLowerCase().includes(filters.get("q").toLowerCase()))).sort((a,b) => filters.get("sort")==="oldest" ? a.created-b.created : b.created-a.created);
-  $("list").innerHTML = r.data.length
-    ? r.data
-        .map(
-          (e) =>
-            `<li class="row" tabindex="0" role="option" aria-selected="${e.id === selected}" data-id="${e.id}"><span class="av sm" aria-hidden="true">${ini(e.name)}</span><div class="rb"><div class="top"><b>${esc(e.subject)}</b><span>${e.overdue ? '<span class="tag late">Overdue</span> ' : ""}${tag(stat(e.statusId))}</span></div><small>${esc(e.name)} 쨌 ${esc(catName(e.categoryId))} 쨌 ${ago(e.created)}${e.priority === "high" ? " 쨌 high priority" : ""}</small></div></li>`,
-        )
-        .join("")
-    : '<li class="empty">No enquiries match these filters. Clear them or create a new enquiry.</li>';
+  categories.forEach((item) => item.enquiries = categoryCounts.get(item.id) || 0);
+  statuses.forEach((item) => item.enquiries = statusCounts.get(item.id) || 0);
 }
-const upd = async (id, b) => {
-  await run(() => api("PUT", "update-enquiry/" + id, b));
-  refresh();
-};
+function renderStats() {
+  const converted = enquiries.filter((item) => item.converted).length;
+  const uniqueCustomers = new Set(enquiries.map((item) => item.email.toLowerCase()).filter(Boolean)).size;
+  const items = [["Enquiries", enquiries.length], ["Converted", converted], ["Customers with email", uniqueCustomers], ["Categories", categories.length]];
+  $("stats").innerHTML = items.map(([label, value]) => `<div class="stat"><b>${value}</b><small>${esc(label)}</small></div>`).join("");
+}
+function renderList() {
+  const query = $("q").value.trim().toLowerCase(), statusId = $("fs").value, categoryId = $("fc").value;
+  const rows = enquiries.filter((item) => (!statusId || item.statusId === statusId) && (!categoryId || item.categoryId === categoryId) && (!query || `${item.name} ${item.email} ${item.message} ${item.enquiryType}`.toLowerCase().includes(query)));
+  rows.sort((a, b) => {
+    if ($("sf").value === "oldest") return new Date(a.created || 0) - new Date(b.created || 0);
+    if ($("sf").value === "followup") return new Date(a.followUp || "9999-12-31") - new Date(b.followUp || "9999-12-31");
+    return new Date(b.created || 0) - new Date(a.created || 0);
+  });
+  $("list").innerHTML = rows.length ? rows.map((item) => `<li class="row" tabindex="0" role="option" aria-selected="${item.id === selected}" data-id="${esc(item.id)}"><span class="av sm" aria-hidden="true">${esc(initials(item.name))}</span><div class="rb"><div class="top"><b>${esc(item.name)}</b><span>${tag(statusLabel(item.statusId), statusFor(item.statusId).isActive)}</span></div><small>${esc(item.message || "No message provided")}<br>${esc(categoryFor(item.categoryId, item.categoryName))} | ${ago(item.created)}${item.enquiryType ? ` | ${esc(item.enquiryType)}` : ""}</small></div></li>`).join("") : '<li class="empty">No enquiries match these filters.</li>';
+}
 async function loadDetail(id) {
-  if (!id) {
-    $("detail").innerHTML =
-      '<div class="empty">Select an enquiry to see its details, or create a new one.</div>';
-    return;
-  }
-  let e;
-  try {
-    e = await api("GET", "get-enquiry/" + id);
-  } catch (x) {
-    selected = null;
-    $("detail").innerHTML =
-      '<div class="empty">That enquiry no longer exists.</div>';
-    return;
-  }
-  const s = stat(e.statusId),
-    i = sts.findIndex((x) => x.id === e.statusId),
-    next = sts[i + 1],
-    prev = sts[i - 1],
-    bad = sts.find((x, j) => Math.abs(j - i) > 1),
-    late = !s.isFinal && Date.now() > due(e),
-    fn = e.name.split(" ")[0];
-  $("detail").innerHTML = `<div class="detail"><h2>${esc(e.subject)}</h2>
-  <div class="meta">${esc(e.name)} 쨌 ${esc(e.email)} 쨌 received ${ago(e.created)} 쨌 <span class="${late ? "late" : ""}">${s.isFinal ? "SLA stopped" : late ? "SLA overdue by " + dur(Date.now() - due(e)) : "SLA due in " + dur(due(e) - Date.now())}</span></div>
-  <div class="msg">${esc(e.message)}</div>
-  <ol class="steps" aria-label="Status progress">${sts.map((x, j) => `<li class="${j === i ? "cur" : j < i ? "past" : ""}">${esc(x.name)}</li>`).join("")}</ol>
-  <div class="ctl">${next ? `<button class="pri" data-to="${next.id}">Move to ${esc(next.name)}</button>` : ""}${prev ? `<button data-to="${prev.id}">Back to ${esc(prev.name)}</button>` : ""}</div>
-  <div class="ctl"><label for="cat">Category</label><select id="cat">${cats.map((c) => `<option value="${c.id}" ${c.id === e.categoryId ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select>
-   <button class="dan" id="del">Delete</button></div>
-  ${e.history.length ? "<h3>Status history</h3>" + e.history.map((h) => `<div class="note">${esc(h.from)} to ${esc(h.to)}<small>${ago(h.at)}</small></div>`).join("") : ""}
-  <h3>Customer feedback</h3>
-  ${e.replies.length ? e.replies.map((r) => `<div class="note">${esc(r.text)}<small>Sent to ${esc(e.email)} 쨌 ${ago(r.at)}</small></div>`).join("") : '<p class="meta">No replies yet. The first reply moves a new enquiry to the next status.</p>'}
-  <select id="tpl" aria-label="Reply template"><option value="">Start from a template</option><option value="ack">Acknowledge receipt</option><option value="info">Ask for more information</option><option value="done">Confirm resolution</option></select>
-  <textarea id="rt" rows="3" placeholder="Record customer feedback" aria-label="Customer feedback" style="margin:8px 0"></textarea>
-  <button class="pri" id="send">Save feedback</button>
-  </div>`;
-  const T = {
-    ack: `Hi ${fn}, thanks for getting in touch. We?占퐒e received your enquiry and will update you shortly.`,
-    info: `Hi ${fn}, could you share a few more details so we can help? Order numbers or dates would be useful.`,
-    done: `Hi ${fn}, we?占퐒e resolved your enquiry. Reply to this message if anything still looks wrong.`,
+  if (!id) { $("detail").innerHTML = '<div class="empty">Select an enquiry to see the customer details.</div>'; return; }
+  let item;
+  try { item = await api("GET", `get-enquiry/${encodeURIComponent(id)}`, null, true); }
+  catch (error) { $("detail").innerHTML = `<div class="empty">${esc(errorText(error))}</div>`; return; }
+
+  const statusOptions = statuses.filter((option) => option.isActive || option.id === item.statusId);
+  $("detail").innerHTML = `<div class="detail"><h2>Enquiry #${esc(item.id)}</h2>
+    <p class="meta">Received ${esc(dateText(item.created))}</p>
+    <div class="msg">${esc(item.message || "No message provided")}</div>
+    <dl class="record-fields"><div><dt>Customer</dt><dd>${esc(item.name)}</dd></div><div><dt>Email</dt><dd>${item.email ? `<a href="mailto:${esc(item.email)}">${esc(item.email)}</a>` : "Not provided"}</dd></div><div><dt>Phone</dt><dd>${item.phone ? `<a href="tel:${esc(item.phone)}">${esc(item.phone)}</a>` : "Not provided"}</dd></div><div><dt>Enquiry type</dt><dd>${esc(item.enquiryType || "Not provided")}</dd></div><div><dt>Converted</dt><dd>${item.converted ? "Yes" : "No"}</dd></div><div><dt>Follow-up date</dt><dd>${esc(dateText(item.followUp))}</dd></div></dl>
+    <div class="ctl"><label for="detailCategory">Category</label><select id="detailCategory">${categories.map((option) => `<option value="${esc(option.id)}" ${option.id === item.categoryId ? "selected" : ""}>${esc(labelFor(categories, option))}${option.isActive ? "" : " (inactive)"}</option>`).join("")}</select><label for="detailStatus">Status</label><select id="detailStatus">${statusOptions.map((option) => `<option value="${esc(option.id)}" ${option.id === item.statusId ? "selected" : ""}>${esc(labelFor(statuses, option))}</option>`).join("")}</select><label for="detailFollowUp">Follow-up date</label><input id="detailFollowUp" type="datetime-local" value="${dateInput(item.followUp)}"><button class="pri" id="updateEnquiry">Save changes</button><button class="dan" id="deleteEnquiry">Delete</button></div>
+    <h3>Customer feedback</h3><p class="meta">${esc(item.feedback || "No feedback recorded.")}</p><textarea id="feedback" rows="3" placeholder="Record customer feedback">${esc(item.feedback)}</textarea><button class="pri" id="saveFeedback">Save feedback</button></div>`;
+  $("updateEnquiry").onclick = async () => {
+    try { await api("PUT", `update-enquiry/${encodeURIComponent(item.id)}`, { categoryId: $("detailCategory").value, statusId: $("detailStatus").value, followUp: $("detailFollowUp").value }); await refresh(item.id); toast("Enquiry updated."); }
+    catch (error) { toast(errorText(error)); }
   };
-  $("tpl").onchange = () => {
-    $("rt").value = T[$("tpl").value] || "";
+  $("saveFeedback").onclick = async () => {
+    try { await api("PUT", `update-enquiry/${encodeURIComponent(item.id)}`, { feedback: $("feedback").value }); await refresh(item.id); toast("Feedback saved."); }
+    catch (error) { toast(errorText(error)); }
   };
-  document
-    .querySelectorAll("[data-to]")
-    .forEach((b) => (b.onclick = () => upd(id, { statusId: b.dataset.to })));
-  if ($("bad")) $("bad").onclick = () => upd(id, { statusId: bad.id });
-  $("cat").onchange = () => upd(id, { categoryId: $("cat").value });
-  $("send").onclick = () => upd(id, { reply: $("rt").value });
-  $("del").onclick = (ev) =>
-    arm(ev.currentTarget, async () => {
-      await run(() => api("DELETE", "delete-enquiry/" + id));
-      selected = null;
-      refresh();
-    });
+  $("deleteEnquiry").onclick = (event) => arm(event.currentTarget, async () => {
+    try { await api("DELETE", `delete-enquiry/${encodeURIComponent(item.id)}`); selected = null; await refresh(); toast("Enquiry deleted."); }
+    catch (error) { toast(errorText(error)); }
+  });
 }
 function renderManage() {
-  $("catBody").innerHTML = cats.length
-    ? cats
-        .map(
-          (c) =>
-            `<tr><td>${esc(c.name)}</td><td>${esc(c.description)}</td><td>${c.enquiries}</td><td class="ra"><button data-ed="category" data-id="${c.id}">Edit</button> <button class="dan" data-del="category" data-id="${c.id}">Delete</button></td></tr>`,
-        )
-        .join("")
-    : '<tr><td colspan="4" class="empty">No categories yet. Add one to start sorting enquiries.</td></tr>';
-  $("staBody").innerHTML = sts
-    .map(
-      (s) =>
-        `<tr><td>${s.order}</td><td>${tag(s)}</td><td>${s.isFinal ? "Yes" : "No"}</td><td>${s.enquiries}</td><td class="ra"><button data-ed="status" data-id="${s.id}">Edit</button> <button class="dan" data-del="status" data-id="${s.id}">Delete</button></td></tr>`,
-    )
-    .join("");
+  $("catBody").innerHTML = categories.length ? categories.map((item) => `<tr><td>${esc(labelFor(categories, item))}</td><td>${item.isActive ? "Yes" : "No"}</td><td>${item.enquiries}</td><td class="ra"><button data-ed="category" data-id="${esc(item.id)}">Edit</button> <button class="dan" data-del="category" data-id="${esc(item.id)}">Delete</button></td></tr>`).join("") : '<tr><td colspan="4" class="empty">No categories returned by the API.</td></tr>';
+  $("staBody").innerHTML = statuses.length ? statuses.map((item) => `<tr><td>${tag(labelFor(statuses, item), item.isActive)}</td><td>${item.isActive ? "Yes" : "No"}</td><td>${item.enquiries}</td><td class="ra"><button data-ed="status" data-id="${esc(item.id)}">Edit</button> <button class="dan" data-del="status" data-id="${esc(item.id)}">Delete</button></td></tr>`).join("") : '<tr><td colspan="4" class="empty">No statuses returned by the API.</td></tr>';
 }
-async function refresh() {
-  const state=$("apiState"); state.hidden=false; state.classList.remove("error"); state.textContent="Loading enquiries from FreeProjectAPI...";
+function renderDashboard() {
+  const converted = enquiries.filter((item) => item.converted).length;
+  const customers = new Set(enquiries.map((item) => item.email.toLowerCase()).filter(Boolean)).size;
+  const pastFollowUps = enquiries.filter((item) => !item.converted && item.followUp && new Date(item.followUp).getTime() < Date.now()).length;
+  const cards = [["#f05b5b", "Enquiries", enquiries.length], ["#2f80ed", "Converted", converted], ["#6cc644", "Customers with email", customers], ["#d98a00", "Past follow-up dates", pastFollowUps]];
+  $("cards").innerHTML = cards.map(([color, label, count]) => `<div class="card sc" style="--c:${color}"><h4>${label}</h4><div class="top"><span class="n">${count}</span></div><small>Current API records</small></div>`).join("");
+  const days = Array.from({ length: 7 }, (_, index) => ({ label: new Date(Date.now() - (6 - index) * 86400000).toLocaleDateString("en", { weekday: "short" }), count: 0 }));
+  enquiries.forEach((item) => { const age = Math.floor((Date.now() - new Date(item.created).getTime()) / 86400000); if (age >= 0 && age < 7) days[6 - age].count++; });
+  const maximum = Math.max(1, ...days.map((day) => day.count));
+  $("week").innerHTML = `<div class="wk">${days.map((day) => `<div class="col"><div class="tr" title="${day.count} enquiries"><i style="height:${(day.count / maximum) * 100}%;background:var(--acc)"></i></div><small>${day.label}</small></div>`).join("")}</div><p class="mute">Counted by enquiryDate.</p>`;
+  const grouped = new Map();
+  enquiries.forEach((item) => { const name = categoryFor(item.categoryId, item.categoryName); grouped.set(name, (grouped.get(name) || 0) + 1); });
+  const topCategories = [...grouped].sort((a, b) => b[1] - a[1]).slice(0, 5);
+  $("categoryCounts").innerHTML = topCategories.length ? `<div class="category-breakdown">${topCategories.map(([name, count]) => `<div><span>${esc(name)}</span><b>${count}</b></div>`).join("")}</div>` : '<p class="mute">No category counts available.</p>';
+  $("recent").innerHTML = [...enquiries].sort((a, b) => new Date(b.created || 0) - new Date(a.created || 0)).slice(0, 4).map((item) => `<div class="rc"><b>${esc(item.name)}</b> <small>${ago(item.created)}</small><br><small>${esc(item.message || "No message provided")} | ${esc(categoryFor(item.categoryId, item.categoryName))} | ${esc(statusLabel(item.statusId))}</small></div>`).join("") || '<p class="mute">No enquiries returned by the API.</p>';
+}
+async function refresh(keepSelected = selected) {
+  const state = $("apiState"); state.hidden = false; state.classList.remove("error"); state.textContent = "Loading data from FreeProjectAPI...";
   try {
-    await loadMeta(true);
-    await Promise.all([loadStats(),loadDash(),loadList(),loadDetail(selected)]);
-    renderManage(); state.hidden=true;
-  } catch(e) {
-    state.hidden=false; state.classList.add("error");
-    state.textContent=e.message || "Could not load data from FreeProjectAPI. Please refresh to try again.";
-    $("list").innerHTML='<li class="empty">Enquiries could not be loaded. Check your connection and refresh.</li>';
+    const [, result] = await Promise.all([loadMeta(), api("GET", "get-enquiries", null, true)]);
+    enquiries = result.data; selected = keepSelected; updateCounts();
+    renderStats(); renderDashboard(); renderList(); renderManage(); await loadDetail(selected);
+    state.hidden = true;
+  } catch (error) {
+    state.hidden = false; state.classList.add("error"); state.textContent = errorText(error);
+    $("list").innerHTML = '<li class="empty">Enquiries could not be loaded. Check the connection and refresh.</li>';
   }
 }
-async function show(t) {
-  tab = t;
-  document
-    .querySelectorAll("[data-tab]")
-    .forEach((b) => b.setAttribute("aria-selected", b.dataset.tab === t));
-  ["dash", "enq", "cat", "sta"].forEach((k) => ($("v-" + k).hidden = k !== t));
-  if (t === "dash") loadDash();
-  if (t === "cat" || t === "sta") {
-    await loadMeta(false);
-    renderManage();
-  }
+function show(tab) {
+  document.querySelectorAll("[data-tab]").forEach((button) => button.setAttribute("aria-selected", button.dataset.tab === tab));
+  ["dash", "enq", "cat", "sta"].forEach((key) => { $("v-" + key).hidden = key !== tab; });
 }
-
-async function loadDash() {
-  const r = await api("GET", "get-enquiries", null, true),
-    d = r.data,
-    fin = (e) => stat(e.statusId).isFinal,
-    op = d.filter((e) => !fin(e)),
-    od = op.filter((e) => e.overdue).length;
-  const pct = d.length
-      ? Math.round(((d.length - op.length) / d.length) * 100)
-      : 0,
-    convertedCount = d.filter((e) => e.converted).length;
-  const days = Array.from({ length: 7 }, () => ({ o: 0, c: 0 }));
-  d.forEach((e) => {
-    const i = 6 - Math.min(6, Math.floor((Date.now() - e.created) / (24 * HR)));
-    days[i][fin(e) ? "c" : "o"]++;
-  });
-  const tot = days.map((p) => p.o + p.c),
-    max = Math.max(1, ...tot);
-  const lbl = (i) =>
-    new Date(Date.now() - (6 - i) * 24 * HR).toLocaleDateString("en", {
-      weekday: "short",
-    });
-  const pts = tot
-    .map((v, i) => `${(i * 100) / 6},${30 - (v / max) * 26}`)
-    .join(" ");
-  const card = (c, t, n, v, sub) =>
-    `<div class="card sc" style="--c:${c}"><h4>${t}</h4><div class="top"><span class="n">${n}</span>${v}</div>${sub}</div>`;
-  $("cards").innerHTML =
-    card(
-      "#f05b5b",
-      "Total enquiries",
-      d.length,
-      `<div class="donut" style="--p:${pct}" role="img" aria-label="${pct}% completed"></div>`,
-      `<small>${pct}% completed</small>`,
-    ) +
-    card(
-      "#2f80ed",
-      "Open enquiries",
-      op.length,
-      "",
-      `<div class="bar"><i style="width:${op.length ? Math.round(((op.length - od) / op.length) * 100) : 100}%"></i></div><small>Within SLA ${op.length - od} 쨌 Overdue ${od}</small>`,
-    ) +
-    card(
-      "#6cc644",
-      "Customers",
-      new Set(d.map((e) => e.email)).size,
-      `<svg viewBox="0 0 100 32" width="90" height="32" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="var(--c)" stroke-width="2"/></svg>`,
-      `<small>${tot.reduce((a, b) => a + b, 0)} enquiries in the last 7 days</small>`,
-    ) +
-    card(
-      "#2ecfc9",
-      "Converted enquiries",
-      convertedCount,
-      `<div class="donut" style="--p:${d.length ? Math.round(convertedCount / d.length * 100) : 0}" role="img" aria-label="${d.length ? Math.round(convertedCount / d.length * 100) : 0}% converted"></div>`,
-      `<small>${d.length ? Math.round(convertedCount / d.length * 100) : 0}% of enquiries</small>`,
-    );
-  $("week").innerHTML =
-    `<div class="wk">${days.map((p, i) => `<div class="col"><div class="tr" title="${p.o} open, ${p.c} completed"><i style="height:${(p.o / max) * 100}%;background:var(--acc)"></i><i style="height:${(p.c / max) * 100}%;background:#2ecfc9"></i></div><small>${lbl(i)}</small></div>`).join("")}</div><p class="mute" style="margin:12px 0 0"><span class="dot" style="background:var(--acc);margin-left:0"></span>Open<span class="dot" style="background:#2ecfc9"></span>Completed</p>`;
-  const ag = {};
-  d.filter(fin).forEach((e) => {
-    if (e.assignee) ag[e.assignee] = (ag[e.assignee] || 0) + 1;
-  });
-  const top = Object.entries(ag)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3);
-  $("agents").innerHTML = top.length
-    ? `<div class="ag">${top.map(([n, c], i) => `<div style="background:${["#6c5ce7", "#0b8a85", "#2f6fd0"][i]}"><b>${esc(n)}</b><small>${c} resolved</small><span class="rk">${["1st", "2nd", "3rd"][i]}</span></div>`).join("")}</div>`
-    : '<p class="mute">No resolved enquiries yet.</p>';
-  $("recent").innerHTML = [...d]
-    .sort((a, b) => b.created - a.created)
-    .slice(0, 3)
-    .map(
-      (e) =>
-        `<div class="rc"><b>${esc(e.subject)}</b> <small>${ago(e.created)}</small><br><small>${esc(e.name)} 쨌 ${esc(catName(e.categoryId))} 쨌 ${esc(stat(e.statusId).name)}</small></div>`,
-    )
-    .join("");
-}
-$("gs").onkeydown = (e) => {
-  if (e.key === "Enter") {
-    $("q").value = $("gs").value;
-    show("enq");
-    loadList();
-  }
-};
-document.addEventListener("click", (e) => {
-  const g = e.target.closest("[data-go]");
-  if (g) show(g.dataset.go);
+$("gs").onkeydown = (event) => { if (event.key === "Enter") { $("q").value = $("gs").value; show("enq"); renderList(); } };
+document.addEventListener("click", (event) => { const link = event.target.closest("[data-go]"); if (link) show(link.dataset.go); });
+document.querySelectorAll("[data-tab]").forEach((button) => { button.onclick = () => show(button.dataset.tab); });
+$("list").addEventListener("click", (event) => { const row = event.target.closest(".row"); if (row) { selected = row.dataset.id; renderList(); loadDetail(selected); } });
+$("list").addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { const row = event.target.closest(".row"); if (row) { event.preventDefault(); selected = row.dataset.id; renderList(); loadDetail(selected); } } });
+let searchTimer;
+$("q").oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(renderList, 200); };
+["fs", "fc", "sf"].forEach((id) => { $(id).onchange = renderList; });
+$("rst").onclick = () => refresh(null);
+for (const viewId of ["v-cat", "v-sta"]) $(viewId).addEventListener("click", async (event) => {
+  const button = event.target.closest("button"); if (!button) return;
+  if (button.dataset.new) { openDialog(button.dataset.new); return; }
+  const type = button.dataset.ed || button.dataset.del;
+  if (button.dataset.ed) { openDialog(type, button.dataset.id); return; }
+  if (button.dataset.del) arm(button, async () => { try { await api("DELETE", `delete-${type}/${button.dataset.id}`); await refresh(); } catch (error) { toast(errorText(error)); } });
 });
-
-// ================= Events =================
-document
-  .querySelectorAll("[data-tab]")
-  .forEach((b) => (b.onclick = () => show(b.dataset.tab)));
-$("list").addEventListener("click", (e) => {
-  const r = e.target.closest(".row");
-  if (r) {
-    selected = r.dataset.id;
-    refresh();
-  }
-});
-$("list").addEventListener("keydown", (e) => {
-  if (e.key === "Enter" || e.key === " ") {
-    const r = e.target.closest(".row");
-    if (r) {
-      e.preventDefault();
-      selected = r.dataset.id;
-      refresh();
-    }
-  }
-});
-let tm;
-$("q").oninput = () => {
-  clearTimeout(tm);
-  tm = setTimeout(loadList, 300);
+const forms = {
+  enquiry: [["name", "Customer name", "text"], ["email", "Email", "email"], ["phone", "Phone", "tel"], ["message", "Message", "textarea"], ["enquiryType", "Enquiry type", "text"], ["followUp", "Follow-up date", "datetime-local"], ["categoryId", "Category", "category"]],
+  category: [["name", "Category name", "text"], ["isActive", "Active", "check"]],
+  status: [["name", "Status name", "text"], ["isActive", "Active", "check"]],
 };
-["fs", "fc", "sf"].forEach((i) => ($(i).onchange = loadList));
-$("rst").onclick = () => { selected = null; refresh(); toast("Data refreshed from FreeProjectAPI."); };
-for (const id of ["v-cat", "v-sta"])
-  $(id).addEventListener("click", (ev) => {
-    const b = ev.target.closest("button");
-    if (!b) return;
-    if (b.dataset.new) openDlg(b.dataset.new);
-    else if (b.dataset.ed) openDlg(b.dataset.ed, b.dataset.id);
-    else if (b.dataset.del)
-      arm(b, async () => {
-        await run(() =>
-          api("DELETE", "delete-" + b.dataset.del + "/" + b.dataset.id),
-        );
-        refresh();
-      });
-  });
-
-// ================= Create / edit dialog =================
-const FORMS = {
-  enquiry: [
-    ["name", "Name", "text"],
-    ["email", "Email", "email"],
-    ["phone", "Phone", "tel"],
-    ["subject", "Subject", "text"],
-    ["message", "Message", "textarea"],
-    ["categoryId", "Category", "cat"],
-    ["priority", "Priority", "pri"],
-  ],
-  category: [
-    ["name", "Name", "text"],
-    ["description", "Description", "text"],
-  ],
-  status: [
-    ["name", "Name", "text"],
-    ["order", "Position in workflow", "number"],
-    ["color", "Colour", "color"],
-    ["isFinal", "Stops the SLA clock (work is done)", "check"],
-  ],
-};
-function fieldHtml([k, l, t], v) {
-  const id = "f_" + k;
-  if (t === "check")
-    return `<label class="chk"><input type="checkbox" id="${id}" ${v ? "checked" : ""}> ${l}</label>`;
-  let c;
-  if (t === "textarea")
-    c = `<textarea id="${id}" rows="4">${esc(v)}</textarea>`;
-  else if (t === "cat")
-    c = `<select id="${id}">${cats.map((x) => `<option value="${x.id}" ${x.id === v ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select>`;
-  else if (t === "pri")
-    c = `<select id="${id}">${["high", "normal", "low"].map((x) => `<option ${x === v ? "selected" : ""}>${x}</option>`).join("")}</select>`;
-  else c = `<input id="${id}" type="${t}" value="${esc(v)}">`;
-  return `<label for="${id}">${l}</label>${c}`;
+let editing = null;
+function fieldMarkup([key, label, type], value) {
+  const id = `field_${key}`;
+  if (type === "check") return `<label class="chk"><input id="${id}" type="checkbox" ${value ? "checked" : ""}> ${label}</label>`;
+  if (type === "textarea") return `<label for="${id}">${label}</label><textarea id="${id}" rows="4">${esc(value)}</textarea>`;
+  if (type === "category") return `<label for="${id}">${label}</label><select id="${id}">${categories.filter((item) => item.isActive || item.id === value).map((item) => `<option value="${esc(item.id)}" ${item.id === value ? "selected" : ""}>${esc(item.name)}</option>`).join("")}</select>`;
+  return `<label for="${id}">${label}</label><input id="${id}" type="${type}" value="${esc(value)}">`;
 }
-let ed = null;
-function openDlg(type, id) {
-  ed = { type, id };
-  const cur = id
-    ? (type === "category" ? cats : sts).find((x) => x.id === id)
-    : {
-        priority: "normal",
-        categoryId: cats[0] && cats[0].id,
-        order: sts.length + 1,
-        color: "#6b7688",
-        isFinal: false,
-      };
-  $("dt").textContent = (id ? "Edit " : "New ") + type;
-  $("dfields").innerHTML = FORMS[type]
-    .map((f) => fieldHtml(f, cur[f[0]] ?? ""))
-    .join("");
-  $("derr").textContent = "";
-  $("dlg").showModal();
-  $("dfields").querySelector("input,select,textarea").focus();
+function openDialog(type, id = null) {
+  const collection = type === "category" ? categories : statuses;
+  const current = id ? collection.find((item) => item.id === id) : { isActive: true, categoryId: categories.find((item) => item.isActive)?.id || "" };
+  editing = { type, id };
+  $("dt").textContent = `${id ? "Edit" : "New"} ${type}`;
+  $("dfields").innerHTML = forms[type].map((field) => fieldMarkup(field, current[field[0]] ?? "")).join("");
+  $("derr").textContent = ""; $("dlg").showModal(); $("dfields").querySelector("input,select,textarea")?.focus();
 }
-$("newBtn").onclick = async () => {
-  if (!cats.length) await loadMeta(true);
-  openDlg("enquiry");
-};
+$("newBtn").onclick = () => openDialog("enquiry");
 $("cancel").onclick = () => $("dlg").close();
 $("save").onclick = async () => {
   const body = {};
-  FORMS[ed.type].forEach(([k, , t]) => {
-    const el = $("f_" + k);
-    body[k] =
-      t === "check" ? el.checked : t === "number" ? Number(el.value) : el.value;
-  });
+  forms[editing.type].forEach(([key, , type]) => { const field = $("field_" + key); body[key] = type === "check" ? field.checked : field.value; });
   try {
-    const r = await api(
-      ed.id ? "PUT" : "POST",
-      (ed.id ? "update-" : "create-") + ed.type + (ed.id ? "/" + ed.id : ""),
-      body,
-    );
-    $("dlg").close();
-    if (ed.type === "enquiry") {
-      selected = r.id;
-      await show("enq");
-    }
-    refresh();
-  } catch (x) {
-    $("derr").textContent = x.out
-      ? msgFor(x.out)
-      : "Something went wrong. Try again.";
-  }
+    const result = await api(editing.id ? "PUT" : "POST", `${editing.id ? "update-" : "create-"}${editing.type}${editing.id ? "/" + editing.id : ""}`, body);
+    $("dlg").close(); await refresh(editing.type === "enquiry" ? result?.id : selected);
+  } catch (error) { $("derr").textContent = errorText(error); }
 };
-
-$("today").textContent = new Date().toLocaleDateString("en", {
-  weekday: "long",
-  day: "numeric",
-  month: "long",
-});
+$("today").textContent = new Date().toLocaleDateString("en", { weekday: "long", day: "numeric", month: "long" });
 refresh();
