@@ -1144,3 +1144,246 @@ dialog .chk input {
         margin-inline: 16px;
     }
 }
+
+/* Shared page rhythm and section treatments */
+main {
+    height: auto;
+    min-height: 100vh;
+}
+
+main > div {
+    min-height: 100vh;
+}
+
+.api-state {
+    margin: 16px 32px 0;
+    padding: 11px 14px;
+    border: 1px solid var(--line);
+}
+
+.api-state.error {
+    border-color: color-mix(in srgb, var(--danger) 30%, var(--line));
+    background: color-mix(in srgb, var(--danger) 8%, var(--surface));
+}
+
+.topbar {
+    padding: 24px 32px 16px;
+    border-bottom: 1px solid var(--line);
+    background: var(--surface);
+}
+
+.greet {
+    font-size: 24px;
+    letter-spacing: -.035em;
+}
+
+.sub {
+    margin-top: 3px;
+}
+
+.dash,
+.pane {
+    padding: 24px 32px 32px;
+}
+
+.dash {
+    overflow: visible;
+}
+
+.cards {
+    gap: 18px;
+    margin-bottom: 18px;
+}
+
+.card,
+.split > section,
+table {
+    border-radius: 16px;
+}
+
+.card {
+    padding: 22px;
+}
+
+.sc {
+    border-top: 0;
+    border-left: 4px solid var(--c);
+}
+
+.sc .n {
+    font-size: 34px;
+    letter-spacing: -.04em;
+}
+
+.grid2 {
+    gap: 18px;
+    align-items: start;
+}
+
+.grid2 > .card {
+    min-width: 0;
+}
+
+.stats {
+    padding: 18px 32px 0;
+    gap: 14px;
+}
+
+.stat {
+    flex: 1;
+    padding: 12px 16px;
+}
+
+.split {
+    grid-template-columns: minmax(300px, 0.78fr) minmax(0, 1.5fr);
+    gap: 18px;
+    padding: 18px 32px 32px;
+    height: calc(100vh - 190px);
+    min-height: 520px;
+}
+
+.split > section {
+    min-height: 0;
+}
+
+.tools {
+    padding: 16px;
+}
+
+li.row {
+    padding: 15px 16px;
+}
+
+.detail {
+    max-width: none;
+    padding: 26px;
+}
+
+.ctl {
+    display: grid;
+    grid-template-columns: minmax(110px, auto) minmax(0, 1fr);
+    gap: 9px 12px;
+    align-items: center;
+}
+
+.ctl select,
+.ctl input {
+    width: 100%;
+}
+
+.ctl button {
+    grid-column: 2;
+    justify-self: start;
+}
+
+.pane > .top {
+    margin: 2px 0 18px;
+}
+
+.section-intro {
+    color: var(--mute);
+    font-size: 14px;
+}
+
+.pane table {
+    min-width: 620px;
+}
+
+.pane {
+    overflow: auto;
+}
+
+@media (max-width: 1100px) {
+    main > div {
+        min-height: 0;
+    }
+
+    .split {
+        height: auto;
+        min-height: 0;
+    }
+
+    .split > section {
+        max-height: 72vh;
+    }
+}
+
+@media (max-width: 900px) {
+    .api-state {
+        margin: 14px 22px 0;
+    }
+
+    .topbar {
+        padding: 20px 22px 14px;
+    }
+
+    .dash,
+    .pane {
+        padding: 20px 22px 28px;
+    }
+
+    .stats {
+        padding-inline: 22px;
+    }
+
+    .split {
+        padding-inline: 22px;
+    }
+}
+
+@media (max-width: 700px) {
+    .api-state {
+        margin-inline: 16px;
+    }
+
+    .topbar {
+        padding: 18px 16px 14px;
+    }
+
+    .greet {
+        font-size: 21px;
+    }
+
+    .dash,
+    .pane {
+        padding: 16px 16px 24px;
+    }
+
+    .stats {
+        padding: 14px 16px 0;
+    }
+
+    .stat {
+        flex: 0 0 auto;
+    }
+
+    .split {
+        grid-template-columns: minmax(0, 1fr);
+        padding: 14px 16px 24px;
+    }
+
+    .split > section {
+        max-height: none;
+    }
+
+    .split > section:first-child {
+        max-height: 55vh;
+    }
+
+    .detail {
+        padding: 20px;
+    }
+
+    .ctl {
+        grid-template-columns: 1fr;
+    }
+
+    .ctl button {
+        grid-column: 1;
+    }
+
+    .pane > .top {
+        align-items: flex-start;
+        flex-wrap: wrap;
+    }
+}

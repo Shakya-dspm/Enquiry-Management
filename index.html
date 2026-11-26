@@ -54,7 +54,7 @@
             <div id="apiState" class="api-state" role="status" aria-live="polite">Loading enquiries from FreeProjectAPI...</div>
             <div class="topbar">
                 <div>
-                    <h2 class="greet">Enquiry overview</h2>
+                    <h2 class="greet" id="pageTitle">Enquiry overview</h2>
                     <p class="sub" id="today"></p>
                 </div><label class="search"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
                         <circle cx="11" cy="11" r="7" />
@@ -105,7 +105,7 @@
             </div>
             <div class="view pane" id="v-cat" hidden>
                 <div class="top">
-                    <h2>Categories</h2><button class="pri" data-new="category">Add category</button>
+                    <p class="section-intro">Create and maintain the categories used to classify enquiries.</p><button class="pri" data-new="category">Add category</button>
                 </div>
                 <table>
                     <thead>
@@ -121,7 +121,7 @@
             </div>
             <div class="view pane" id="v-sta" hidden>
                 <div class="top">
-                    <h2>Statuses</h2><button class="pri" data-new="status">Add status</button>
+                    <p class="section-intro">Manage the status labels available for enquiry records.</p><button class="pri" data-new="status">Add status</button>
                 </div>
                 <p class="meta">Statuses are the labels returned by the API. Workflow order and completion rules are not provided.</p>
                 <table>

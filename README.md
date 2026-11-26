@@ -1,10 +1,10 @@
-﻿# Enquiry Desk
+# Enquiry Desk
 
 This static frontend reads enquiry records, categories, and statuses from FreeProjectAPI's Enquiry API.
 
 ## Local development
 
-Run `node local-server.cjs` and open <http://localhost:8080>. The server serves the static files and proxies `/api/Enquiry/*` requests to `https://api.freeprojectapi.com`, avoiding browser CORS checks during local development. It uses Node's built-in modules and requires no install step.
+Run `node server.js` and open <http://localhost:8080>. The server serves the static files and proxies `/api/Enquiry/*` requests to `https://api.freeprojectapi.com`, avoiding browser CORS checks during local development. It uses Node's built-in modules and requires no install step.
 
 ## Static hosting limitation
 

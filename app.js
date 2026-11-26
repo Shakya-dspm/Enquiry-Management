@@ -1,4 +1,4 @@
-const API_BASE = typeof location !== "undefined" && /^(localhost|127\.0\.0\.1)$/.test(location.hostname)
+const API_BASE = typeof location !== "undefined" && /^(localhost|127\.0\.0\.1)$/.test(location.hostname) && location.port === "8080"
   ? "/api/Enquiry"
   : "https://api.freeprojectapi.com/api/Enquiry";
 const $ = (id) => document.getElementById(id);
@@ -47,23 +47,33 @@ async function api(method, path, body, quiet) {
   if (body && action.includes("enquiry")) {
     payload = {};
     if (action === "create-enquiry") {
-      const newStatus = statuses.find((s) => s.name.toLowerCase() === "new");
+      const newStatus = statuses.find((s) => s.isActive && s.name.toLowerCase() === "new") || statuses.find((s) => s.isActive);
       Object.assign(payload, {
         customerName: body.name,
-        customerEmail: body.email,
-        customerPhone: body.phone || "",
-        message: body.message,
-        categoryId: Number(body.categoryId),
-        statusId: newStatus ? Number(newStatus.id) : undefined,
+        customerEmail: body.email || null,
+        customerPhone: body.phone || null,
+        message: body.message || null,
+        categoryId: body.categoryId ? Number(body.categoryId) : null,
+        statusId: newStatus ? Number(newStatus.id) : null,
         enquiryType: body.enquiryType || "",
+        isConverted: false,
         enquiryDate: new Date().toISOString(),
         followUpDate: body.followUp || null,
       });
     } else {
-      if ("categoryId" in body) payload.categoryId = Number(body.categoryId);
+      // The API update model requires customerName, enquiryDate, isConverted,
+      // and statusId on every PUT, so send the complete record rather than a patch.
+      if ("name" in body) payload.customerName = body.name;
+      if ("email" in body) payload.customerEmail = body.email || null;
+      if ("phone" in body) payload.customerPhone = body.phone || null;
+      if ("message" in body) payload.message = body.message || null;
+      if ("enquiryType" in body) payload.enquiryType = body.enquiryType || null;
+      if ("converted" in body) payload.isConverted = Boolean(body.converted);
+      if ("created" in body) payload.enquiryDate = body.created;
+      if ("categoryId" in body) payload.categoryId = body.categoryId ? Number(body.categoryId) : null;
       if ("statusId" in body) payload.statusId = Number(body.statusId);
       if ("followUp" in body) payload.followUpDate = body.followUp || null;
-      if ("feedback" in body) payload.feedback = body.feedback;
+      if ("feedback" in body) payload.feedback = body.feedback || null;
     }
   } else if (body && action.includes("category")) {
     payload = {};
@@ -83,12 +93,13 @@ async function api(method, path, body, quiet) {
       ...(method !== "GET" ? { body: JSON.stringify(payload ?? {}) } : {}),
     });
   } catch {
-    throw new Error("The browser could not reach FreeProjectAPI. Static hosting may be blocked by provider CORS; run node local-server.cjs locally.");
+    throw new Error("The browser could not reach FreeProjectAPI. Static hosting may be blocked by provider CORS; run node server.js locally.");
   }
   let raw = null;
   if (response.status !== 204) { try { raw = await response.json(); } catch {} }
   if (!response.ok || raw?.result === false) {
-    throw Object.assign(new Error(raw?.message || `API request failed (${response.status})`), { out: raw });
+    const detail = raw?.message || raw?.error?.filter?.(Boolean).join(", ");
+    throw Object.assign(new Error(`${method} ${endpoint}: ${detail || `API request failed (${response.status})`}`), { out: raw });
   }
   let data = raw?.data ?? raw;
   if (action === "get-enquiries") data = (Array.isArray(data) ? data : []).map(mapEnquiry);
@@ -120,7 +131,7 @@ function toast(message) {
   const node = $("toast"); node.textContent = message; node.classList.add("on");
   clearTimeout(toastTimer); toastTimer = setTimeout(() => node.classList.remove("on"), 4000);
 }
-function errorText(error) { return error?.out?.message || error?.message || "Something went wrong. Try again."; }
+function errorText(error) { return error?.message || error?.out?.message || "Something went wrong. Try again."; }
 function arm(button, action) {
   if (button.dataset.armed) { action(); return; }
   button.dataset.armed = "1"; const label = button.textContent; button.textContent = "Confirm delete";
@@ -138,7 +149,10 @@ const options = (items, allLabel) => (allLabel ? `<option value="">${allLabel}</
 function setOptions(id, html) { const old = $(id).value; $(id).innerHTML = html; $(id).value = old; }
 async function loadMeta() {
   const [categoryResponse, statusResponse] = await Promise.all([api("GET", "get-categories", null, true), api("GET", "get-statuses", null, true)]);
-  categories = categoryResponse.data; statuses = statusResponse.data;
+  // Metadata endpoints return their arrays directly; only get-enquiries wraps
+  // the result as { data, total }.
+  categories = Array.isArray(categoryResponse) ? categoryResponse : [];
+  statuses = Array.isArray(statusResponse) ? statusResponse : [];
   setOptions("fs", options(statuses, "All statuses"));
   setOptions("fc", options(categories, "All categories"));
 }
@@ -167,6 +181,12 @@ function renderList() {
   });
   $("list").innerHTML = rows.length ? rows.map((item) => `<li class="row" tabindex="0" role="option" aria-selected="${item.id === selected}" data-id="${esc(item.id)}"><span class="av sm" aria-hidden="true">${esc(initials(item.name))}</span><div class="rb"><div class="top"><b>${esc(item.name)}</b><span>${tag(statusLabel(item.statusId), statusFor(item.statusId).isActive)}</span></div><small>${esc(item.message || "No message provided")}<br>${esc(categoryFor(item.categoryId, item.categoryName))} | ${ago(item.created)}${item.enquiryType ? ` | ${esc(item.enquiryType)}` : ""}</small></div></li>`).join("") : '<li class="empty">No enquiries match these filters.</li>';
 }
+const enquiryUpdateBody = (item, changes = {}) => ({
+  name: item.name, email: item.email, phone: item.phone, message: item.message,
+  enquiryType: item.enquiryType, converted: item.converted, created: item.created,
+  categoryId: item.categoryId, statusId: item.statusId, followUp: item.followUp,
+  feedback: item.feedback, ...changes,
+});
 async function loadDetail(id) {
   if (!id) { $("detail").innerHTML = '<div class="empty">Select an enquiry to see the customer details.</div>'; return; }
   let item;
@@ -178,14 +198,14 @@ async function loadDetail(id) {
     <p class="meta">Received ${esc(dateText(item.created))}</p>
     <div class="msg">${esc(item.message || "No message provided")}</div>
     <dl class="record-fields"><div><dt>Customer</dt><dd>${esc(item.name)}</dd></div><div><dt>Email</dt><dd>${item.email ? `<a href="mailto:${esc(item.email)}">${esc(item.email)}</a>` : "Not provided"}</dd></div><div><dt>Phone</dt><dd>${item.phone ? `<a href="tel:${esc(item.phone)}">${esc(item.phone)}</a>` : "Not provided"}</dd></div><div><dt>Enquiry type</dt><dd>${esc(item.enquiryType || "Not provided")}</dd></div><div><dt>Converted</dt><dd>${item.converted ? "Yes" : "No"}</dd></div><div><dt>Follow-up date</dt><dd>${esc(dateText(item.followUp))}</dd></div></dl>
-    <div class="ctl"><label for="detailCategory">Category</label><select id="detailCategory">${categories.map((option) => `<option value="${esc(option.id)}" ${option.id === item.categoryId ? "selected" : ""}>${esc(labelFor(categories, option))}${option.isActive ? "" : " (inactive)"}</option>`).join("")}</select><label for="detailStatus">Status</label><select id="detailStatus">${statusOptions.map((option) => `<option value="${esc(option.id)}" ${option.id === item.statusId ? "selected" : ""}>${esc(labelFor(statuses, option))}</option>`).join("")}</select><label for="detailFollowUp">Follow-up date</label><input id="detailFollowUp" type="datetime-local" value="${dateInput(item.followUp)}"><button class="pri" id="updateEnquiry">Save changes</button><button class="dan" id="deleteEnquiry">Delete</button></div>
-    <h3>Customer feedback</h3><p class="meta">${esc(item.feedback || "No feedback recorded.")}</p><textarea id="feedback" rows="3" placeholder="Record customer feedback">${esc(item.feedback)}</textarea><button class="pri" id="saveFeedback">Save feedback</button></div>`;
+    <div class="ctl"><label for="detailCategory">Category</label><select id="detailCategory"><option value="">Unassigned</option>${categories.map((option) => `<option value="${esc(option.id)}" ${option.id === item.categoryId ? "selected" : ""}>${esc(labelFor(categories, option))}${option.isActive ? "" : " (inactive)"}</option>`).join("")}</select><label for="detailStatus">Status</label><select id="detailStatus">${statusOptions.map((option) => `<option value="${esc(option.id)}" ${option.id === item.statusId ? "selected" : ""}>${esc(labelFor(statuses, option))}</option>`).join("")}</select><label for="detailFollowUp">Follow-up date</label><input id="detailFollowUp" type="datetime-local" value="${dateInput(item.followUp)}"><button class="pri" id="updateEnquiry">Save changes</button><button class="dan" id="deleteEnquiry">Delete</button></div>
+    <h3>Customer feedback</h3><p class="meta">${esc(item.feedback || "No feedback recorded.")}</p><textarea id="feedback" rows="3" maxlength="500" placeholder="Record customer feedback">${esc(item.feedback)}</textarea><button class="pri" id="saveFeedback">Save feedback</button></div>`;
   $("updateEnquiry").onclick = async () => {
-    try { await api("PUT", `update-enquiry/${encodeURIComponent(item.id)}`, { categoryId: $("detailCategory").value, statusId: $("detailStatus").value, followUp: $("detailFollowUp").value }); await refresh(item.id); toast("Enquiry updated."); }
+    try { await api("PUT", `update-enquiry/${encodeURIComponent(item.id)}`, enquiryUpdateBody(item, { categoryId: $("detailCategory").value, statusId: $("detailStatus").value, followUp: $("detailFollowUp").value })); await refresh(item.id); toast("Enquiry updated."); }
     catch (error) { toast(errorText(error)); }
   };
   $("saveFeedback").onclick = async () => {
-    try { await api("PUT", `update-enquiry/${encodeURIComponent(item.id)}`, { feedback: $("feedback").value }); await refresh(item.id); toast("Feedback saved."); }
+    try { await api("PUT", `update-enquiry/${encodeURIComponent(item.id)}`, enquiryUpdateBody(item, { feedback: $("feedback").value })); await refresh(item.id); toast("Feedback saved."); }
     catch (error) { toast(errorText(error)); }
   };
   $("deleteEnquiry").onclick = (event) => arm(event.currentTarget, async () => {
@@ -228,6 +248,14 @@ async function refresh(keepSelected = selected) {
 function show(tab) {
   document.querySelectorAll("[data-tab]").forEach((button) => button.setAttribute("aria-selected", button.dataset.tab === tab));
   ["dash", "enq", "cat", "sta"].forEach((key) => { $("v-" + key).hidden = key !== tab; });
+  const pages = {
+    dash: ["Enquiry overview", new Date().toLocaleDateString("en", { weekday: "long", day: "numeric", month: "long" })],
+    enq: ["Enquiries", "Search, filter and update customer enquiries"],
+    cat: ["Categories", "Organize enquiries with the categories provided by the API"],
+    sta: ["Statuses", "Manage the status labels available in the API"],
+  };
+  $("pageTitle").textContent = pages[tab][0];
+  $("today").textContent = pages[tab][1];
 }
 $("gs").onkeydown = (event) => { if (event.key === "Enter") { $("q").value = $("gs").value; show("enq"); renderList(); } };
 document.addEventListener("click", (event) => { const link = event.target.closest("[data-go]"); if (link) show(link.dataset.go); });
@@ -255,12 +283,13 @@ function fieldMarkup([key, label, type], value) {
   const id = `field_${key}`;
   if (type === "check") return `<label class="chk"><input id="${id}" type="checkbox" ${value ? "checked" : ""}> ${label}</label>`;
   if (type === "textarea") return `<label for="${id}">${label}</label><textarea id="${id}" rows="4">${esc(value)}</textarea>`;
-  if (type === "category") return `<label for="${id}">${label}</label><select id="${id}">${categories.filter((item) => item.isActive || item.id === value).map((item) => `<option value="${esc(item.id)}" ${item.id === value ? "selected" : ""}>${esc(item.name)}</option>`).join("")}</select>`;
-  return `<label for="${id}">${label}</label><input id="${id}" type="${type}" value="${esc(value)}">`;
+  if (type === "category") return `<label for="${id}">${label}</label><select id="${id}"><option value="">Unassigned</option>${categories.filter((item) => item.isActive || item.id === value).map((item) => `<option value="${esc(item.id)}" ${item.id === value ? "selected" : ""}>${esc(item.name)}</option>`).join("")}</select>`;
+  const constraints = key === "name" ? ` required minlength="${editing.type === "enquiry" ? 2 : 1}" maxlength="${editing.type === "enquiry" ? 150 : 100}"` : key === "email" ? ' maxlength="150"' : key === "phone" ? ' maxlength="50"' : key === "message" ? ' minlength="10" maxlength="2000"' : key === "enquiryType" ? ' maxlength="100"' : "";
+  return `<label for="${id}">${label}</label><input id="${id}" type="${type}" value="${esc(value)}"${constraints}>`;
 }
 function openDialog(type, id = null) {
   const collection = type === "category" ? categories : statuses;
-  const current = id ? collection.find((item) => item.id === id) : { isActive: true, categoryId: categories.find((item) => item.isActive)?.id || "" };
+  const current = id ? collection.find((item) => item.id === id) : { isActive: true, categoryId: "" };
   editing = { type, id };
   $("dt").textContent = `${id ? "Edit" : "New"} ${type}`;
   $("dfields").innerHTML = forms[type].map((field) => fieldMarkup(field, current[field[0]] ?? "")).join("");
@@ -269,6 +298,11 @@ function openDialog(type, id = null) {
 $("newBtn").onclick = () => openDialog("enquiry");
 $("cancel").onclick = () => $("dlg").close();
 $("save").onclick = async () => {
+  if (!$("frm").reportValidity()) return;
+  if (editing.type === "enquiry" && !statuses.some((status) => status.isActive)) {
+    $("derr").textContent = "The API has no active status available for a new enquiry. Activate a status and try again.";
+    return;
+  }
   const body = {};
   forms[editing.type].forEach(([key, , type]) => { const field = $("field_" + key); body[key] = type === "check" ? field.checked : field.value; });
   try {
